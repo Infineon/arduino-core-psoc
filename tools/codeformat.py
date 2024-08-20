@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import glob
 import itertools
@@ -6,9 +8,9 @@ import re
 import subprocess
 
 # Relative to top-level repo dir.
-PATHS = ["cores/psoc/*.[cpph]"]
+PATHS = ["cores/psoc/*.[ch]", "cores/psoc/*.cpp"]
 
-EXCLUSIONS = []
+EXCLUSIONS = ["cores/arduino/**/*.[ch]"]
 
 # Path to repo top-level dir.
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -37,10 +39,10 @@ def fixup_c(filename):
         dedent_stack = []
         while lines:
             # Get next line.
-            next_line = lines.pop(0)
+            nl = lines.pop(0)
 
             # Dedent #'s to match indent of following line (not previous line).
-            m = re.match(r"( +)#(if |ifdef |ifndef |elif |else|endif)", next_line)
+            m = re.match(r"( +)#(if |ifdef |ifndef |elif |else|endif)", nl)
             if m:
                 indent = len(m.group(1))
                 directive = m.group(2)
@@ -51,7 +53,7 @@ def fixup_c(filename):
                         r" +(} else |case )", l_next
                     ):
                         # This #-line (and all associated ones) needs dedenting by 4 spaces.
-                        next_line = next_line[4:]
+                        nl = nl[4:]
                         dedent_stack.append(indent - 4)
                     else:
                         # This #-line does not need dedenting.
@@ -61,12 +63,12 @@ def fixup_c(filename):
                         # This associated #-line needs dedenting to match the #if.
                         indent_diff = indent - dedent_stack[-1]
                         assert indent_diff >= 0
-                        next_line = next_line[indent_diff:]
+                        nl = nl[indent_diff:]
                     if directive == "endif":
                         dedent_stack.pop()
 
             # Write out line.
-            f.write(next_line)
+            f.write(nl)
 
         assert not dedent_stack, filename
 

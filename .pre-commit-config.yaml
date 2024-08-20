@@ -3,11 +3,11 @@ repos:
     hooks:
       - id: codeformat
         name: codeformat.py for changed C files
-        entry: tools/codeformat.py -v -c -f
+        entry: python3 tools/codeformat.py -v -c -f
         language: python
       - id: verifygitlog
         name: git commit message format checker
-        entry: tools/verifygitlog.py --check-file --ignore-rebase
+        entry: python3 tools/verifygitlog.py --check-file --ignore-rebase
         language: python
         verbose: true
         stages: [commit-msg]
