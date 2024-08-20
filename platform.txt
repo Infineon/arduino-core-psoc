@@ -1,0 +1,58 @@
+# PSoC platform
+# ------------------------------
+# For more info:
+# https://arduino.github.io/arduino-cli/platform-specification/
+
+# The information about this Arduino compatible environment
+# ---------
+name=PSoC Family
+version=0.0.1
+
+# Build related core definitions
+# ---------
+build.core.path ={runtime.platform.path}/core
+build.variant.path ={runtime.platform.path}/variants/{build.variant}
+build.variant.config_path ={runtime.platform.path}/variants/{build.variant}/config/{build.board_variant}
+build.flash_ld_path ={build.variant.path}/{build.flash_ld}
+build.assembly_file ={build.variant.path}/Startup_{build.variant}.S
+
+# Compiler and toolchain paths
+# ---------
+compiler.path={runtime.tools.modustoolbox-gcc.path}/bin/
+compiler.c.cmd=arm-none-eabi-gcc
+compiler.c.flags=-c -g -Os -w -std=gnu11 -ffunction-sections -fdata-sections -MMD
+compiler.c.elf.flags=-g -Os -Wl,--gc-sections -T {build.variant.path}/{build.ldscript}
+compiler.cpp.cmd=arm-none-eabi-g++
+compiler.cpp.flags=-c -g -Os -w -std=gnu++11 -fno-threadsafe-statics -ffunction-sections -fdata-sections -MMD
+compiler.ar.cmd=arm-none-eabi-ar
+compiler.ar.flags=rcs
+compiler.objcopy.cmd=arm-none-eabi-objcopy
+compiler.objcopy.eep.flags=-O ihex -j .eeprom --change-section-lma .eeprom=0
+compiler.objcopy.hex.flags=-O ihex
+compiler.size.cmd=arm-none-eabi-size
+
+# Build commands
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {build.variant.path}/{build.ldscript} {includes} "{source_file}" -o "{object_file}"
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {build.variant.path}/{build.ldscript} {includes} "{source_file}" -o "{object_file}"
+recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {archive_file} {object_files}
+recipe.c.combine.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.elf.flags} {object_files} {build.extra_flags} -o "{build.path}/{build.project_name}.elf"
+recipe.objcopy.eep.pattern="{compiler.path}{compiler.objcopy.cmd}" {compiler.objcopy.eep.flags} "{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.eep"
+recipe.objcopy.hex.pattern="{compiler.path}{compiler.objcopy.cmd}" {compiler.objcopy.hex.flags} "{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.hex"
+recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
+
+# Project and board configuration
+build.mcu=cortex-m4
+build.f_cpu=150000000L
+build.core=psoc6
+build.variant=psoc6_variant
+build.ldscript=linker_script.ld
+
+# Board-specific configurations
+build.board=psoc6_ai_kit
+
+# Includes
+includes=-I{build.path}/core -I{build.path}/variant -I{build.path}/libraries
+
+# Compiler and linker options
+compiler.c.elf.flags=-g -Os -Wl,--gc-sections -T {build.variant.path}/{build.ldscript} -mcpu={build.mcu} -mthumb -Wl,-Map,{build.path}/{build.project_name}.map
+compiler.cpp.elf.flags={compiler.c.elf.flags}
