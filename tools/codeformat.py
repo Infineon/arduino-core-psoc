@@ -125,9 +125,9 @@ def main():
         for file in files:
             fixup_c(file)
 
-    # Format Python files with "ruff format" (using config in pyproject.toml).
+    # Format Python files with "black".
     if format_py:
-        command = ["ruff", "format"]
+        command = ["black"]
         if args.v:
             command.append("-v")
         else:
