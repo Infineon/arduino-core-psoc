@@ -1,79 +1,34 @@
-# Infineon's PSoC Microcontroller Boards for Arduino
+# Arduino Core for Infineon's PSoC Microcontrollers
 
-This repository integrates [Infineon's](https://www.infineon.com/) PSoC microcontrollers into the [Arduino IDE](https://www.arduino.cc/en/main/software).
+--- CD badges go here ---
 
-## Contents
+This repository integrates Infineon's [PSoC microcontrollers](https://www.infineon.com/cms/de/product/microcontroller/32-bit-psoc-arm-cortex-microcontroller/) into the [Arduino ecosystem](https://www.arduino.cc/en/main/software).
 
-- [Infineon's PSoC Microcontroller Boards for Arduino](#infineons-psoc-microcontroller-boards-for-arduino)
-  - [Contents](#contents)
-  - [Supported Microcontroller Boards](#supported-microcontroller-boards)
-  - [Additional Information](#additional-information)
-  - [Installation Instructions](#installation-instructions)
-    - [Prework for SEGGER J-Link](#prework-for-segger-j-link)
-    - [Required Tools](#required-tools)
-    - [Integration of Arduino IDE](#integration-of-arduino-ide)
-  - [Contributing](#contributing)
+> [!WARNING]  
+> This project is work in progress. Currently not all PSoC products & features are supported in Arduino. Please refer to the docs for further information.
 
-## Supported Microcontroller Boards
+## Supported Products
 
-* [CY8CKIT-062S2-AI](https://www.infineon.com/cms/en/product/evaluation-boards/cy8ckit-062s2-ai/)
+<table>
+    <tr>
+        <td><img src="https://www.infineon.com/export/sites/default/media/products/Microcontrollers/XMC/CY8CKIT-062S2-AI_KIT.png_2013019694.png" width=200></td>
+    </tr>
+    <tr>
+        <td style="test-align : center"><a href="https://www.infineon.com/cms/en/product/evaluation-boards/cy8ckit-062s2-ai/">CY8CKIT-062S2-AI</a></td>
+    </tr>
+</table>
+
+## Getting Started
+
+For installation & getting started instruction please refer to [our docs](TODO).
 
 ## Additional Information
 
-Please visit Infineon's [PSoC Products Page](https://www.infineon.com/cms/en/product/microcontroller/32-bit-arm-cortex-microcontroller/psoc-6/) for datasheets, pin out diagrams, and additional technical information.
-
-## Installation Instructions
-
-### Prework for SEGGER J-Link
-
-In order to use Infineon's PSoC microcontroller boards in Arduino, you need [SEGGER J-Link](https://www.segger.com/downloads/jlink) installed on your machine first. Please follow [this link](https://www.segger.com/downloads/jlink) and install the J-Link Software and Documentation Pack for your respective operating system (OS).
-
-![J-Link](docs/images/jlink_install.png)
-
-If you are downloading J-Link for the first time, make sure to check this box: Install USB Driver for J-Link.
-
-![J-Link-driver](docs/images/J-Link_Installer_options_page.png)
-
-### Required Tools
-
-The PSoC-for-Arduino repository requires Python 3.x and `pyserial`. Make sure Python is installed on your machine and available in the system path.
-
-You can check if it was successfully installed by opening your command line or terminal and typing:
-
-```
-python --version
-```
-
-With [pip](https://pip.pypa.io/en/stable/installation/) available, install the required packages from a terminal:
-
-```
-pip install pyserial
-```
-
-### Integration of Arduino IDE
-
-Please first download the Arduino IDE. This package is only tested for Arduino IDE >=1.5. We recommend using Arduino IDE >=2.0.
-
-![Preferences](docs/images/preference.png)
-
-Paste the following URL into the 'Additional boards manager URLs' input field under **File** > **Preferences** to add Infineon's PSoC microcontroller boards to the Arduino IDE.
-
-```
-https://github.com/Infineon/PSoC-for-Arduino/releases/latest/download/package_infineon_index.json
-```
-
-![Adding a Board JSON](docs/images/preference_JSON.png)
-
-To install the boards, please go to **Tools** > **Board** > **Boards Manager...** and search for PSoC. You will see options to install the board files for the microcontrollers. Click "Install" to add the boards to your Arduino IDE.
-
-![Infineon Board Entry](docs/images/Boards_Manager_Entry.png)
-
-In the boards list **Tools** > **Board**, you will now find the supported PSoC microcontroller boards. 
-
-![Board List](docs/images/Boards_Manager_Entry.png)
+Please visit our [PSoC products page](https://www.infineon.com/cms/de/product/microcontroller/32-bit-psoc-arm-cortex-microcontroller/) for datasheets, pin out diagrams, and additional technical information.
 
 ## Contributing
 
-We welcome contributions to the Arduino PSoC project!
+We welcome community contributions! Please refer to our [contribution guidelines](CONTRIBUTING.md). Your help is greatly appreciated 👐
 
-> We would like to have this repository in a polite and friendly atmosphere, so please be kind and respectful to others.
+## License
+Refer to the [license](LICENSE.md) file for more details about this project's license.
