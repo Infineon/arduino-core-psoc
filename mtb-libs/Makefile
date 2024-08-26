@@ -182,7 +182,7 @@ CY_WIN_HOME=$(subst \,/,$(USERPROFILE))
 # If you install ModusToolbox software in a custom location, add the path to its
 # "tools_X.Y" folder (where X and Y are the version number of the tools
 # folder). Make sure you use forward slashes.
-CY_TOOLS_PATHS ?= $(wildcard ../tools_*)
+CY_TOOLS_PATHS ?= $(wildcard ../../../../tools/mtb-tools/3.2/tools_*)
 
 # Default to the newest installed tools folder, or the users override (if it's
 # found).
