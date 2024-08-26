@@ -31,13 +31,16 @@ compiler.c.cmd=arm-none-eabi-gcc
 #compiler.objcopy.hex.flags=-O ihex
 #compiler.size.cmd=arm-none-eabi-size
 
-libmanager.path={runtime.tools.mtb-tools.path}/tools_3.2/library-manager/
-libmanager.cmd=library-manager-cli
+libmanager={runtime.tools.mtb-tools.path}/tools_3.2/library-manager/library-manager-cli.exe
+
+mtbshell={runtime.tools.mtb-tools.path}/tools_3.2/modus-shell/bin/bash.exe
+
 
 # Build commands
-recipe.hooks.prebuild.1.pattern=python --version
-recipe.hooks.prebuild.2.pattern="{libmanager.path}{libmanager.cmd}" --project {runtime.platform.path}/mtb-libs --add-bsp-name CY8CKIT-062S2-AI
-recipe.preproc.macros="{compiler.path}{compiler.c.cmd}" --version
+recipe.hooks.prebuild.1.pattern="{libmanager}" --project {runtime.platform.path}/mtb-libs --add-bsp-name CY8CKIT-062S2-AI
+recipe.hooks.prebuild.2.pattern="{mtbshell}" -i -l -c "cd /cygdrive/c/Users/enriquezgarc/AppData/Local/Arduino15/packages/infineon-psoc/hardware/psoc/0.1.0/mtb-libs && make getlibs"
+recipe.hooks.prebuild.3.pattern="{mtbshell}" -i -l -c "cd /cygdrive/c/Users/enriquezgarc/AppData/Local/Arduino15/packages/infineon-psoc/hardware/psoc/0.1.0/mtb-libs && make build"
+
 #recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {build.variant.path}/{build.ldscript} {includes} "{source_file}" -o "{object_file}"
 #recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {build.variant.path}/{build.ldscript} {includes} "{source_file}" -o "{object_file}"
 #recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {archive_file} {object_files}
