@@ -10,49 +10,100 @@ version=0.0.1
 
 # Build related core definitions
 # ---------
-build.core.path ={runtime.platform.path}/core
-build.variant.path ={runtime.platform.path}/variants/{build.variant}
-build.variant.config_path ={runtime.platform.path}/variants/{build.variant}/config/{build.board_variant}
-build.flash_ld_path ={build.variant.path}/{build.flash_ld}
-build.assembly_file ={build.variant.path}/Startup_{build.variant}.S
+build.core.path={runtime.platform.path}/core
+build.flash_ld_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/{build.flash_ld}
+build.assembly_file={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/{build.startup_s}
 
 # Compiler and toolchain paths
 # ---------
-compiler.path={runtime.tools.modustoolbox-gcc.path}/bin/
+compiler.path=C:/Users/subramar/ModusToolbox/tools_3.2/gcc/bin/
+
 compiler.c.cmd=arm-none-eabi-gcc
-compiler.c.flags=-c -g -Os -w -std=gnu11 -ffunction-sections -fdata-sections -MMD
-compiler.c.elf.flags=-g -Os -Wl,--gc-sections -T {build.variant.path}/{build.ldscript}
 compiler.cpp.cmd=arm-none-eabi-g++
-compiler.cpp.flags=-c -g -Os -w -std=gnu++11 -fno-threadsafe-statics -ffunction-sections -fdata-sections -MMD
 compiler.ar.cmd=arm-none-eabi-ar
-compiler.ar.flags=rcs
-compiler.objcopy.cmd=arm-none-eabi-objcopy
-compiler.objcopy.eep.flags=-O ihex -j .eeprom --change-section-lma .eeprom=0
-compiler.objcopy.hex.flags=-O ihex
 compiler.size.cmd=arm-none-eabi-size
+compiler.c.elf.cmd=arm-none-eabi-gcc
+compiler.S.cmd=arm-none-eabi-gcc
+compiler.objcopy.cmd=arm-none-eabi-objcopy
+compiler.elf2hex.cmd=arm-none-eabi-objcopy
 
-# Build commands
-recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {build.variant.path}/{build.ldscript} {includes} "{source_file}" -o "{object_file}"
-recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {build.variant.path}/{build.ldscript} {includes} "{source_file}" -o "{object_file}"
-recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {archive_file} {object_files}
-recipe.c.combine.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.elf.flags} {object_files} {build.extra_flags} -o "{build.path}/{build.project_name}.elf"
-recipe.objcopy.eep.pattern="{compiler.path}{compiler.objcopy.cmd}" {compiler.objcopy.eep.flags} "{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.eep"
-recipe.objcopy.hex.pattern="{compiler.path}{compiler.objcopy.cmd}" {compiler.objcopy.hex.flags} "{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.hex"
-recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
+# Compiler definitions
+compiler.warning_flags=-w
+compiler.define=-DARDUINO=
 
-# Project and board configuration
-build.mcu=cortex-m4
-build.f_cpu=150000000L
-build.core=psoc6
-build.variant=psoc6_variant
-build.ldscript=linker_script.ld
+# Compiler include paths for include files
+compiler.arduino_core.path={runtime.platform.path}/cores/arduino/api
+compiler.arduino_core_dep.path={compiler.arduino_core.path}/deprecated
+compiler.arduino_core_dep_avr.path={compiler.arduino_core.path}/deprecated-avr-comp/avr
+compiler.arduino_core_api.path= "-I{compiler.arduino_core_dep_avr.path}" "-I{compiler.arduino_core_dep.path}"  "-I{compiler.arduino_core.path}" 
 
-# Board-specific configurations
-build.board=psoc6_ai_kit
+# GCC related definitions
+compiler.c.flags=-mthumb -mtune={build.mcu} -mcpu={build.mcu} -c -g -Os {compiler.warning_flags} -std=gnu11 -ffunction-sections -fdata-sections -nostdlib --param max-inline-insns-single=500 -MMD
+compiler.c.extra_flags=-ftime-report -c -mcpu=cortex-m4 --specs=nano.specs -mfloat-abi=softfp -mfpu=fpv4-sp-d16 -mthumb -ffunction-sections -fdata-sections -ffat-lto-objects -g -Wall -pipe -DCOMPONENT_43439 -DCOMPONENT_APP_CY8CKIT_062S2_AI -DCOMPONENT_CAT1 -DCOMPONENT_CAT1A -DCOMPONENT_CM0P_SLEEP -DCOMPONENT_CM4 -DCOMPONENT_CM4_0 -DCOMPONENT_Debug -DCOMPONENT_GCC_ARM -DCOMPONENT_HCI_UART -DCOMPONENT_MURATA_1YN -DCOMPONENT_MW_CAT1CM0P -DCOMPONENT_MW_CMSIS -DCOMPONENT_MW_CORE_LIB -DCOMPONENT_MW_CORE_MAKE -DCOMPONENT_MW_MTB_HAL_CAT1 -DCOMPONENT_MW_MTB_PDL_CAT1 -DCOMPONENT_MW_RECIPE_MAKE_CAT1A -DCOMPONENT_PSOC6_02 -DCOMPONENT_SOFTFP -DCOMPONENT_WIFI_INTERFACE_SDIO -DCORE_NAME_CM4_0=1 -DCY8C624ABZI_S2D44 -DCY_LIBNAME_mtb_libs -DCY_SUPPORTS_DEVICE_VALIDATION -DCY_TARGET_BOARD=APP_CY8CKIT_062S2_AI -DCY_USING_HAL -DDEBUG -DTARGET_APP_CY8CKIT_062S2_AI @C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/inclist.rsp -o C:/Users/subramar/ModusToolbox/tools_3.2/gcc/bin/arm-none-eabi-gcc  -c -mcpu=cortex-m4 --specs=nano.specs -mfloat-abi=softfp -mfpu=fpv4-sp-d16 -mthumb -ffunction-sections -fdata-sections -ffat-lto-objects -g -Wall -pipe @C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/inclist.rsp -o C:/Users/subramar/ModusToolbox/tools_3.2/gcc/bin/arm-none-eabi-gcc -Wall -Werror -Wno-error=unused-function  -c -mcpu=cortex-m4 --specs=nano.specs -Og -mfloat-abi=softfp -mfpu=fpv4-sp-d16 -mthumb -ffunction-sections -fdata-sections -ffat-lto-objects -g -Wall -pipe -DCOMPONENT_43439 -DCOMPONENT_APP_CY8CKIT_062S2_AI -DCOMPONENT_CAT1 -DCOMPONENT_CAT1A -DCOMPONENT_CM0P_SLEEP -DCOMPONENT_CM4 -DCOMPONENT_CM4_0 -DCOMPONENT_Debug -DCOMPONENT_GCC_ARM -DCOMPONENT_HCI_UART -DCOMPONENT_MURATA_1YN -DCOMPONENT_MW_CAT1CM0P -DCOMPONENT_MW_CMSIS -DCOMPONENT_MW_CORE_LIB -DCOMPONENT_MW_CORE_MAKE -DCOMPONENT_MW_MTB_HAL_CAT1 -DCOMPONENT_MW_MTB_PDL_CAT1 -DCOMPONENT_MW_RECIPE_MAKE_CAT1A -DCOMPONENT_PSOC6_02 -DCOMPONENT_SOFTFP -DCOMPONENT_WIFI_INTERFACE_SDIO -DCORE_NAME_CM4_0=1 -DCY8C624ABZI_S2D44 -DCY_LIBNAME_mtb_libs -DCY_SUPPORTS_DEVICE_VALIDATION -DCY_TARGET_BOARD=APP_CY8CKIT_062S2_AI -DCY_USING_HAL -DDEBUG -DTARGET_APP_CY8CKIT_062S2_AI @C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/inclist.rsp -MMD -MP -MF C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/.cycompiler -MT C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/.cycompiler -o C:/Users/subramar/ModusToolbox/tools_3.2/gcc/bin/arm-none-eabi-g++  -c -mcpu=cortex-m4 --specs=nano.specs -Og -mfloat-abi=softfp -mfpu=fpv4-sp-d16 -mthumb -ffunction-sections -fdata-sections -ffat-lto-objects -g -Wall -pipe -fno-rtti -fno-exceptions -DCOMPONENT_43439 -DCOMPONENT_APP_CY8CKIT_062S2_AI -DCOMPONENT_CAT1 -DCOMPONENT_CAT1A -DCOMPONENT_CM0P_SLEEP -DCOMPONENT_CM4 -DCOMPONENT_CM4_0 -DCOMPONENT_Debug -DCOMPONENT_GCC_ARM -DCOMPONENT_HCI_UART -DCOMPONENT_MURATA_1YN -DCOMPONENT_MW_CAT1CM0P -DCOMPONENT_MW_CMSIS -DCOMPONENT_MW_CORE_LIB -DCOMPONENT_MW_CORE_MAKE -DCOMPONENT_MW_MTB_HAL_CAT1 -DCOMPONENT_MW_MTB_PDL_CAT1 -DCOMPONENT_MW_RECIPE_MAKE_CAT1A -DCOMPONENT_PSOC6_02 -DCOMPONENT_SOFTFP -DCOMPONENT_WIFI_INTERFACE_SDIO -DCORE_NAME_CM4_0=1 -DCY8C624ABZI_S2D44 -DCY_LIBNAME_mtb_libs -DCY_SUPPORTS_DEVICE_VALIDATION -DCY_TARGET_BOARD=APP_CY8CKIT_062S2_AI -DCY_USING_HAL -DDEBUG -DTARGET_APP_CY8CKIT_062S2_AI @C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/inclist.rsp -MMD -MP -MF C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/.cycompiler -MT C:/Users/subramar/AppData/Local/Arduino15/packages/Infineon/hardware/psoc/0.0.1/mtb-libs/build/APP_CY8CKIT-062S2-AI/Debug/.cycompiler -o  -Ibsps/TARGET_APP_CY8CKIT-062S2-AI -Ibsps -I. -Ibsps/TARGET_APP_CY8CKIT-062S2-AI/bluetooth -Ibsps/TARGET_APP_CY8CKIT-062S2-AI/config/GeneratedSource -Ibsps/TARGET_APP_CY8CKIT-062S2-AI/config -I../mtb_shared/cat1cm0p/release-v1.6.0/COMPONENT_CAT1A -I../mtb_shared/cat1cm0p/release-v1.6.0 -I../mtb_shared/cmsis/release-v5.8.0/Core/Include -I../mtb_shared/cmsis/release-v5.8.0/Core -I../mtb_shared/cmsis/release-v5.8.0 -I../mtb_shared/core-lib/release-v1.4.2/include -I../mtb_shared/core-lib/release-v1.4.2 -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/COMPONENT_CAT1A/include/pin_packages -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/COMPONENT_CAT1A/include -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/COMPONENT_CAT1A -I../mtb_shared/mtb-hal-cat1/release-v2.6.1 -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/COMPONENT_CAT1A/include/triggers -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/include -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/include_pvt -I../mtb_shared/mtb-hal-cat1/release-v2.6.1/source -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/devices/COMPONENT_CAT1A/include -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/devices/COMPONENT_CAT1A -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/devices -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1 -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/devices/COMPONENT_CAT1A/include/ip -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/drivers/include -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/drivers -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/drivers/third_party/ethernet/include -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/drivers/third_party/ethernet -I../mtb_shared/mtb-pdl-cat1/release-v3.11.1/drivers/third_party
+compiler.libraries.ldflags=
+
+# linker options
+compiler.c.elf.flags=-g -Os -Wl,--gc-sections -T {build.flash_ld_path} -mcpu={build.mcu} -mthumb -Wl,-Map,{build.path}/{build.project_name}.map
+compiler.cpp.elf.flags={compiler.c.elf.flags}
+compiler.c.elf.extra_flags=
+
+# G++ related definitions
+compiler.cpp.flags=-mthumb -mtune={build.mcu} -mcpu={build.mcu} -fpermissive -c -g -Os {compiler.warning_flags} -std=gnu++11 -ffunction-sections -fdata-sections -fno-threadsafe-statics -nostdlib --param max-inline-insns-single=500 -fno-rtti -fno-exceptions -MMD
+compiler.cpp.extra_flags={compiler.c.elf.flags}
+
+# Assembler related definitions
+compiler.S.flags=-mcpu={build.mcu} -mthumb -c -g -x assembler-with-cpp
+compiler.S.extra_flags=-w
+
+# Archives & binaries related definitions
+compiler.ar.flags=rcs
+compiler.ar.extra_flags=
+
+compiler.elf2hex.flags=-O ihex
+compiler.elf2hex.extra_flags=
+
+libmanager=C:/Users/subramar/ModusToolbox/tools_3.2/library-manager/library-manager-cli.exe
+mtbshell=C:/Users/subramar/ModusToolbox/tools_3.2/modus-shell/bin/bash.exe
+
+# Prebuild Hooks
+recipe.hooks.prebuild.1.pattern.windows="{libmanager}" --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant}
+recipe.hooks.prebuild.2.pattern.windows="{mtbshell}" -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
+recipe.hooks.prebuild.3.pattern.windows="{mtbshell}" -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant}"
 
 # Includes
-includes=-I{build.path}/core -I{build.path}/variant -I{build.path}/libraries
+includes=-I{build.path}/cores/psoc
 
-# Compiler and linker options
-compiler.c.elf.flags=-g -Os -Wl,--gc-sections -T {build.variant.path}/{build.ldscript} -mcpu={build.mcu} -mthumb -Wl,-Map,{build.path}/{build.project_name}.map
-compiler.cpp.elf.flags={compiler.c.elf.flags}
+# Build commands
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
+recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
+
+## Create archives
+# ----------------
+# Archive_file_path is needed for backwards compatibility with IDE 1.6.5 or older, IDE 1.6.6 or newer overrides this value
+archive_file_path={build.path}/{archive_file}
+recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {compiler.ar.extra_flags} "{archive_file_path}" "{object_file}"
+
+# mtb library paths
+compiler.mtb_lib.path = "{runtime.platform.path}/mtb-libs/build/APP_{build.variant}/Debug/mtb-libs.a"
+
+# Linker command
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.mtb_lib.path} {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} {archive_file_path}   -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
+
+## Compute size
+# ----------------
+
+recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A --common "{build.path}/{build.project_name}.elf"
+recipe.size.regex=^(\.text|\.eh_frame)\s+([0-9]+).*
+# Recipe to show SRAM size used
+recipe.size.regex.data=^(?:\.data|\.VENEER_Code|\.ram_code|\.bss|\.no_init|\Stack)\s+([0-9]+).*
+
+# Create output files
+# ----------------
+
+## Create output (bin file)
+recipe.objcopy.bin.pattern="{compiler.path}{compiler.elf2hex.cmd}" {compiler.elf2hex.flags} {compiler.elf2hex.extra_flags}"{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.hex"
+
+## Save hex
+recipe.output.tmp_file={build.project_name}.bin
+recipe.output.save_file={build.project_name}.{build.variant}.bin
