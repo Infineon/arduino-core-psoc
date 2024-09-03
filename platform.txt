@@ -66,9 +66,11 @@ libmanager=C:/Users/subramar/ModusToolbox/tools_3.2/library-manager/library-mana
 mtbshell=C:/Users/subramar/ModusToolbox/tools_3.2/modus-shell/bin/bash.exe
 
 # Prebuild Hooks
-recipe.hooks.prebuild.1.pattern.windows="{libmanager}" --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant}
-recipe.hooks.prebuild.2.pattern.windows="{mtbshell}" -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
-recipe.hooks.prebuild.3.pattern.windows="{mtbshell}" -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant}"
+
+recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" "{libmanager}" --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant}
+recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" "{mtbshell}" -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
+recipe.hooks.prebuild.3.pattern.windows="{libmanager}" --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
+recipe.hooks.prebuild.4.pattern.windows="{mtbshell}" -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant}"
 
 # Includes
 includes=-I{build.path}/cores/psoc
