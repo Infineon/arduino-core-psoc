@@ -7,6 +7,10 @@
 
 # Ignore build folder
 /build
+
+# Ignore mtb build folder
+/mtb-libs/build
+/mtb-libs/bsps
  
 # Ignore files built by Visual Studio/Visual Micro
 [Dd]ebug/
