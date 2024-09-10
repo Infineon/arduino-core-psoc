@@ -1,0 +1,33 @@
+##############################################################
+###### Infineon PSoC6 AI Kit
+##############################################################
+
+menu.UART=Serial Output Selection
+menu.LIB=Additional Libraries
+
+####################################################
+CY8CKIT-062S2-AI-Kit.name=PSoC CY8CKIT-062S2 AI Kit
+
+# Board configuration
+CY8CKIT-062S2-AI-Kit.build.mcu=cortex-m4
+CY8CKIT-062S2-AI-Kit.build.f_cpu=150000000L
+CY8CKIT-062S2-AI-Kit.build.board=CY8CKIT-062S2-AI-Kit
+CY8CKIT-062S2-AI-Kit.build.core=psoc
+CY8CKIT-062S2-AI-Kit.build.series=psoc6
+CY8CKIT-062S2-AI-Kit.build.variant=CY8CKIT-062S2-AI
+CY8CKIT-062S2-AI-Kit.build.board_variant=CY8CKIT-062S2-AI-Kit
+CY8CKIT-062S2-AI-Kit.build.flash_size=2048K
+CY8CKIT-062S2-AI-Kit.build.flash_ld=linker.ld
+CY8CKIT-062S2-AI-Kit.build.startup_s=startup_psoc6_02_cm4.S
+
+
+# OpenOCD configuration
+CY8CKIT-062S2-AI-Kit.upload.openocdscript=openocd_scripts/board/CY8CKIT-062S2-AI-Kit.cfg
+CY8CKIT-062S2-AI-Kit.upload.openocdpath={runtime.tools.openocd.path}
+
+# Upload settings
+CY8CKIT-062S2-AI-Kit.upload.tool=openocd
+CY8CKIT-062S2-AI-Kit.upload.protocol=openocd
+CY8CKIT-062S2-AI-Kit.upload.maximum_size=2097152
+CY8CKIT-062S2-AI-Kit.upload.speed=115200
+CY8CKIT-062S2-AI-Kit.communication=usb

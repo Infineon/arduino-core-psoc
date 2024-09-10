@@ -31,10 +31,8 @@ extern "C" {
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
-#include <string.h>
 #include <types.h>
 #include <math.h>
-#include <pgmspace.h>
 
 // ****************************************************************************
 // @PSoC Lib Includes
@@ -52,7 +50,7 @@ extern "C" {
 // ****************************************************************************
 // @Typedefs
 // ****************************************************************************
-
+   
 // ****************************************************************************
 // @Imported Global Variables
 // ****************************************************************************
@@ -62,54 +60,41 @@ extern "C" {
 // @Prototypes Of Global Functions
 // ****************************************************************************
 
-/*
-* \brief Arduino yield function.
-*/
+	/*
+     * \brief Arduino yield function.
+     */
 void yield(void);
 
-/*
-* \brief Arduino Main setup function. Called only once at the beginning.
-*/
-extern void setup(void);
+    /*
+     * \brief Arduino Main setup function. Called only once at the beginning.
+     */
+    extern void setup(void);
 
-/*
-* \brief Arduino Main loop function. Called in an endless loop.
-*/
-extern void loop(void);
+    /*
+     * \brief Arduino Main loop function. Called in an endless loop.
+     */
+    extern void loop(void);
 
 
 // ****************************************************************************
 // @Arduino Core Includes
 // ****************************************************************************
-#include "wiring_constants.h"
-#include "binary.h"
-#include "wiring_digital.h"
-#include "wiring_analog.h"
-#include "wiring_shift.h"
-#include "wiring_time.h"
-#include "wiring_pulse.h"
+#include "Binary.h"
 #include "itoa.h"
 #include "dtostrf.h"
-#include "WCharacter.h"
-#include "WInterrupts.h"
 
 // ****************************************************************************
 // @Infineon Core Includes
 // ****************************************************************************
-#include "reset.h"
 
 #ifdef __cplusplus
 } // extern "C"
-#include "Tone.h"
-#include "WMath.h"
-#endif  // __cplusplus
 
-#include "Print.h"
-#include "HardwareSerial.h"
+#endif	// __cplusplus
 
-// ****************************************************************************
+
+//****************************************************************************
 // @Board Variant Includes
 // ****************************************************************************
-#include <pins_arduino.h>
 
 #endif  /*_ARDUINO_H_ */
