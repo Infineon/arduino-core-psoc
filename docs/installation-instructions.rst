@@ -13,9 +13,10 @@ Integration in Arduino IDE
 .. image:: img/install_preferences_menu.png
     :width: 600
 
-Paste the following URL into the *Additional boards manager URLs* input field under *File > Preferences* to add Infineon's PSoC™ microcontroller boards to the Arduino IDE.
+Paste the following URL into the *Additional boards manager URLs* input field under *File > Preferences* to add Infineon's PSoC™ microcontroller boards to the Arduino IDE:
 
-.. code-block::
+::
+
     https://github.com/Infineon/arduino-core-psoc/releases/latest/download/package_infineon_index.json
 
 .. image:: img/install_preferences_json.png
