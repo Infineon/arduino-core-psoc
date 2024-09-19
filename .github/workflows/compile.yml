@@ -1,0 +1,77 @@
+name: Arduino Core PSoC CI
+
+# on which event should we start push, pull request or schedule dispatches
+on:
+  - push
+  - pull_request
+
+jobs:
+
+  # The build job compiles the sample code for different boards
+  build:
+
+    # we run this on self hosted runner, use labels to be more specific
+    # add specific names if there are some, otherwise self-hosted, X64, Linux are the default ones
+    runs-on:
+      - self-hosted
+      - X64
+      - Linux
+      - PSoC
+
+    # which combination of sample code and boards should run
+    # for this example of 2 sample codes and 3 boards a total of 2x3=6 runners have to work.
+    # if we have only 4 runner then these 4 are started and the last 2 are waiting until they can start
+    strategy:
+
+      matrix:
+        # List of all examples in the lib to compile
+        example: [
+            examples/testSketch.ino
+        ]
+
+        # board packages we want to run
+        # attention the matrix spans over the fqbn not platform so that we can choose different boards
+        # this example compiles each sample code for Arduino Uno, XMC2Go and XMC4700 boards
+        fqbn: [
+          "Infineon-psoc:psoc:CY8CKIT-062S2-AI-Kit"
+        ]
+
+        # include additional information for each fqbn, in this case the platform name to install
+        include:
+        - fqbn:     "Infineon-psoc:psoc:CY8CKIT-062S2-AI-Kit"
+          platform: "Infineon-psoc:psoc"
+
+    # These are the steps which should run for each combination of fqbn and example code
+    steps:
+        # checkout the latest github action code
+      - name: Checkout actions
+        uses: actions/checkout@v4
+
+        # checkout the latest arduino-cli compiler
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@master
+
+      # prepare the runner for the repo data
+      # setup links inside the self hosted runner for correct directory setup
+      # REPO is the base name of the library which is linked to the right directory structure
+      # check wether the .arduino15 packages dir is available
+      - name: Set and check environment, install repos
+        run: |
+          export REPO="$(basename "$GITHUB_REPOSITORY")"
+          ln -sfn /opt/arduino-core-psoc ~/.arduino15/packages/Infineon-psoc
+          # mkdir -p "$HOME/Arduino/libraries"
+          # ln -sf $GITHUB_WORKSPACE/ $HOME/Arduino/libraries/$REPO
+
+      # Update the arduino code. Attention this does not setup XMC packages as this are set inside the self hosted runner
+      # the arduino board support packages can be updated automatically
+      # the XMC board support package is only linked inside the self hosted runner, which allows
+      # to use none official and beta versions
+      - name: Install/Update Arduino Platform
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install ${{ matrix.platform }}
+
+      # Compile the sample code for the selected board and board support package with the arduino compiler
+      - name: Compile Sketch
+        run: |
+          arduino-cli compile --fqbn ${{ matrix.fqbn }} ${{ matrix.example }}
