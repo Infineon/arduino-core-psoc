@@ -69,7 +69,7 @@ jobs:
       - name: Install/Update Arduino Platform
         run: |
           arduino-cli core update-index
-          arduino-cli core install ${{ matrix.platform }}
+          arduino-cli core update-index --additional-urls https://github.com/Infineon/arduino-core-psoc/releases/download/untagged-8d34d20afb0e407037cb/package_ifx_psoc_index.json
 
       # Compile the sample code for the selected board and board support package with the arduino compiler
       - name: Compile Sketch
