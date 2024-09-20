@@ -18,7 +18,7 @@ build.mtb_libs_board_build_path={runtime.platform.path}/mtb-libs/build/APP_{buil
 # Compiler and toolchain paths
 # ---------
 
-compiler.mtb_lib_tools.path=C:/Users/subramar/ModusToolbox/tools_3.2
+compiler.mtb_lib_tools.path={runtime.tools.ModusToolbox.path}
 compiler.path={compiler.mtb_lib_tools.path}/gcc/bin/
 
 compiler.c.cmd=arm-none-eabi-gcc
@@ -65,20 +65,25 @@ compiler.ar.extra_flags=
 compiler.elf2hex.flags=-O ihex
 compiler.elf2hex.extra_flags=
 
-libmanager={compiler.mtb_lib_tools.path}/library-manager/library-manager-cli.exe
-mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash.exe
+libmanager={compiler.mtb_lib_tools.path}/library-manager/library-manager-cli
+mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash
 
 # Prebuild Hooks
 
-recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager} --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant}
-recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
+recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant}
+recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
 recipe.hooks.prebuild.3.pattern.windows={libmanager} --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
 recipe.hooks.prebuild.4.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant}"
 
+recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant}; fi'
+recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant}; fi'
+recipe.hooks.prebuild.3.pattern.linux={libmanager} --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
+recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant}'
+
 # Prebuild Hook to Fetch Compiler and Linker Flags from mtb-libs build
 
-recipe.hooks.prebuild.5.pattern.windows=python {runtime.platform.path}/tools/mtb_build_info.py ccxxflags {build.mtb_libs_board_build_path}/.cycompiler {build.mtb_libs_board_build_path}
-recipe.hooks.prebuild.6.pattern.windows=python {runtime.platform.path}/tools/mtb_build_info.py ldflags {build.mtb_libs_board_build_path}/.cylinker {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.5.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ccxxflags {build.mtb_libs_board_build_path}/.cycompiler {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.6.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ldflags {build.mtb_libs_board_build_path}/.cylinker {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
 compiler.flags.from_file=@{build.mtb_libs_board_build_path}/compiler_flags.txt
 compiler.elf_flags.from_file=@{build.mtb_libs_board_build_path}/linker_flags.txt
 
