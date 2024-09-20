@@ -1,5 +1,6 @@
 /*
-  Copyright (c) 2011 Arduino.  All right reserved.
+  Arduino.h - Main include file for the Arduino SDK
+  Copyright (c) 2014 Arduino LLC.  All right reserved.
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -8,93 +9,61 @@
 
   This library is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the GNU Lesser General Public License for more details.
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
 
   You should have received a copy of the GNU Lesser General Public
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-
-  Copyright (c) 2018 Infineon Technologies AG
-  This file has been modified for the PSoC microcontroller series.
 */
-#ifndef _ARDUINO_H_
-#define _ARDUINO_H_
+
+#ifndef Arduino_h
+#define Arduino_h
+
+#include "api/ArduinoAPI.h"
+
+#define RAMSTART (HMCRAMC0_ADDR)
+#define RAMSIZE  (HMCRAMC0_SIZE)
+#define RAMEND   (RAMSTART + RAMSIZE - 1)
+
+#ifdef __cplusplus
+
+using namespace arduino;
+
+extern "C"{
+#endif // __cplusplus
+
+// Include Atmel headers
+#undef LITTLE_ENDIAN
+
+#define clockCyclesPerMicrosecond() ( SystemCoreClock / 1000000L )
+#define clockCyclesToMicroseconds(a) ( ((a) * 1000L) / (SystemCoreClock / 1000L) )
+#define microsecondsToClockCycles(a) ( (a) * (SystemCoreClock / 1000000L) )
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+
+// undefine stdlib's abs if encountered
+#ifdef abs
+#undef abs
+#endif // abs
+
+#define abs(x) ((x)>0?(x):-(x))
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// ****************************************************************************
-// @Std Includes
-// ****************************************************************************
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <types.h>
-#include <math.h>
-
-// ****************************************************************************
-// @PSoC Lib Includes
-// ****************************************************************************
-
-
-// ****************************************************************************
-// @Defines
-// ****************************************************************************
-#define clockCyclesPerMicrosecond()     (F_CPU / 1000000L)
-#define clockCyclesToMicroseconds(a)    (((a) * 1000L) / (F_CPU / 1000L))
-#define microsecondsToClockCycles(a)    ((a) * (F_CPU / 1000000L))
-
-
-// ****************************************************************************
-// @Typedefs
-// ****************************************************************************
-   
-// ****************************************************************************
-// @Imported Global Variables
-// ****************************************************************************
-
-
-// ****************************************************************************
-// @Prototypes Of Global Functions
-// ****************************************************************************
-
-	/*
-     * \brief Arduino yield function.
-     */
-void yield(void);
-
-    /*
-     * \brief Arduino Main setup function. Called only once at the beginning.
-     */
-    extern void setup(void);
-
-    /*
-     * \brief Arduino Main loop function. Called in an endless loop.
-     */
-    extern void loop(void);
-
-
-// ****************************************************************************
-// @Arduino Core Includes
-// ****************************************************************************
-#include "Binary.h"
-#include "itoa.h"
-#include "dtostrf.h"
-
-// ****************************************************************************
-// @Infineon Core Includes
-// ****************************************************************************
 
 #ifdef __cplusplus
-} // extern "C"
+}
+#endif
 
-#endif	// __cplusplus
 
+// ARM toolchain doesn't provide itoa etc, provide them
+#include "api/itoa.h"
 
-//****************************************************************************
-// @Board Variant Includes
-// ****************************************************************************
-
-#endif  /*_ARDUINO_H_ */
+#endif // Arduino_h

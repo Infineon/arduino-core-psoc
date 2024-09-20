@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2011 Arduino.  All right reserved.
+  Copyright (c) 2015 Arduino LLC.  All right reserved.
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -16,32 +16,29 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-//****************************************************************************
-// @Defines
-//****************************************************************************
 #define ARDUINO_MAIN
-
-//****************************************************************************
-// @Project Includes
-//****************************************************************************
 #include "Arduino.h"
 
-int main(void)
-{
+// Weak empty variant initialization function.
+// May be redefined by variant files.
+void initVariant() __attribute__((weak));
+void initVariant() { }
+
+
 /*
- *  Initialization Time first to get closer to startup time accuracy
+ * \brief Main entry point of Arduino application
  */
+int main( void )
+{
 
+  initVariant();
 
-// Arduino's main() function just calls setup() and loop()....
-setup();
-while (1)
-    {
+  setup();
+
+  for (;;)
+  {
     loop();
-    // serialEventRun();
-    }
-}
+  }
 
-//****************************************************************************
-//                                 END OF FILE
-//****************************************************************************
+  return 0;
+}
