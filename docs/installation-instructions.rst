@@ -1,3 +1,5 @@
+.. _psoc_core_installation:
+
 Installation Instructions
 ===========================
 
@@ -32,3 +34,13 @@ In the boards list *Tools > Board*, you will now find the supported PSoC™ micr
 
 .. image:: img/install_board_list.png
     :width: 600
+
+Installation in Arduino CLI
+----------------------------
+
+To install the PSoC™ microcontroller boards using the Arduino CLI, first make sure you have the latest version of the Arduino CLI installed. 
+Then, run the following command:
+
+.. code-block:: bash
+
+   $ arduino-cli version

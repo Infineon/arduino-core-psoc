@@ -8,7 +8,7 @@ Welcome to the Arduino Core for Infineon's PSoC™ microcontrollers.
 
 .. toctree::
    :maxdepth: 2
-   :caption: CONTENT:
+   :caption: CONTENT
 
    Introduction<self>
    installation-instructions
