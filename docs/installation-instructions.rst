@@ -19,7 +19,7 @@ Paste the following URL into the *Additional boards manager URLs* input field un
 
 ::
 
-    https://github.com/Infineon/arduino-core-psoc/releases/latest/download/package_infineon_index.json
+    https://github.com/Infineon/arduino-core-psoc/releases/latest/download/package_psoc_index.json
 
 .. image:: img/install_preferences_json.png
     :width: 600
@@ -38,9 +38,24 @@ In the boards list *Tools > Board*, you will now find the supported PSoC™ micr
 Installation in Arduino CLI
 ----------------------------
 
-To install the PSoC™ microcontroller boards using the Arduino CLI, first make sure you have the latest version of the Arduino CLI installed. 
+To install the PSoC™ microcontroller boards using the Arduino CLI, first make sure you have the latest version of the `Arduino CLI <https://arduino.github.io/arduino-cli/0.24/installation/>`_ installed. 
+
 Then, run the following command:
 
 .. code-block:: bash
 
    $ arduino-cli version
+
+Now you can add the Infineon PSoC™ microcontroller boards package to the Arduino CLI:
+
+.. code-block:: bash
+
+    $ arduino-cli core install infineon:psoc --additional-urls https://github.com/Infineon/arduino-core-psoc/releases/latest/download/package_psoc_index.json
+
+Finally,  check if the package has been properly installed by running:
+
+.. code-block:: bash
+
+    $ arduino-cli core list
+
+And... you are ready to develop |:construction_worker:|!
