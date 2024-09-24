@@ -26,7 +26,7 @@ jobs:
 
     - name: Build release assets
       run: |
-        cd .github/scripts
+        cd ../../tools
         python release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
 
     - name: Upload assets
@@ -35,5 +35,5 @@ jobs:
         name: PSoC-for-Arduino ${{  github.ref_name  }}
         files: |
           pkg_build/*.zip
-          pkg_build/package_infineon_index.json
+          pkg_build/package_psoc_index.json
         body: ${{steps.build_changelog.outputs.changelog}}

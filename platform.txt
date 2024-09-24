@@ -6,7 +6,7 @@
 # The information about this Arduino compatible environment
 # ---------
 name=PSoC Family
-version=0.0.1
+version=0.1.0
 
 # Build related core definitions
 # ---------
