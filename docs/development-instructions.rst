@@ -124,7 +124,7 @@ Installing the ArduinoCore-API
 
       cd packages/Infineon-psoc/hardware/psoc/<x.y.z>
 
-3. 0. Initialize the ArduinoCore-API submodule
+3. Initialize the ArduinoCore-API submodule
 
    ::
 
