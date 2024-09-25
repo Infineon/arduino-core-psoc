@@ -40,6 +40,7 @@ compiler.arduino_core_dep.path={compiler.arduino_core.path}/deprecated
 compiler.arduino_core_dep_avr.path={compiler.arduino_core.path}/deprecated-avr-comp/avr
 compiler.arduino_core_api.path= "-I{compiler.arduino_core_dep_avr.path}" "-I{compiler.arduino_core_dep.path}"  "-I{compiler.arduino_core.path}" 
 
+
 # GCC related definitions
 compiler.c.flags=-mtune={build.mcu} -c -g -Os {compiler.warning_flags} -std=gnu11  -nostdlib --param max-inline-insns-single=500 -MMD
 compiler.c.extra_flags=
@@ -87,8 +88,9 @@ recipe.hooks.prebuild.6.pattern=python {runtime.platform.path}/tools/mtb_build_i
 compiler.flags.from_file=@{build.mtb_libs_board_build_path}/compiler_flags.txt
 compiler.elf_flags.from_file=@{build.mtb_libs_board_build_path}/linker_flags.txt
 
+
 # Includes
-includes=-I{build.path}/cores/psoc
+includes=-I{build.path}/cores/psoc 
 
 # Build commands
 recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
@@ -116,7 +118,7 @@ recipe.size.regex=^(\.text|\.eh_frame)\s+([0-9]+).*
 recipe.size.regex.data=^(?:\.data|\.VENEER_Code|\.ram_code|\.bss|\.no_init|\Stack)\s+([0-9]+).*
 
 # Create output files
-# ----------------
+# -------------------
 
 ## Create output (bin file)
 recipe.objcopy.bin.pattern="{compiler.path}{compiler.elf2hex.cmd}" {compiler.elf2hex.flags} {compiler.elf2hex.extra_flags}"{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.hex"
@@ -124,3 +126,25 @@ recipe.objcopy.bin.pattern="{compiler.path}{compiler.elf2hex.cmd}" {compiler.elf
 ## Save hex
 recipe.output.tmp_file={build.project_name}.bin
 recipe.output.save_file={build.project_name}.{build.variant}.bin
+
+# Upload .hex file
+# ----------------
+
+tools.openocd.path={runtime.tools.ModusToolbox.path}/openocd
+tools.openocd.program_ext.linux=
+tools.openocd.program_ext.windows=.exe
+tools.openocd.program={path}/bin/openocd{program_ext}
+# A BSP might have additional openocd config files in its GeneratedSources path
+tools.openocd.board_cfg_search_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/config/GeneratedSource
+# openocd config files search paths
+tools.openocd.search_paths=-s {path}/scripts -s {board_cfg_search_path}
+# openocd requires the adapter serial number to distinguish when multiple boards are connected
+# This is provided by the serial discovery properties of the selected upload port
+tools.openocd.serial_adapter=adapter serial {upload.port.properties.serialNumber}
+# openocd program command to flash the built .hex 
+tools.openocd.command=-c "source [find interface/kitprog3.cfg]; {serial_adapter} ; source [find target/{upload.target_openocd_cfg}]; psoc6 allow_efuse_program off; psoc6 sflash_restrictions 1; program {build.path}/{build.project_name}.hex verify reset exit;"
+# By default openocd is verbose with debug level 2
+tools.openocd.upload.params.verbose= 
+# For quiet mode, the output is stored in a openocd.log file in the build path
+tools.openocd.upload.params.quiet=-l {build.path}/{build.project_name}.openocd.log
+tools.openocd.upload.pattern={program} {upload.verbose} {search_paths} {command}
