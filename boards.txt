@@ -27,7 +27,11 @@ CY8CKIT-062S2-AI-Kit.upload.openocdpath={runtime.tools.openocd.path}
 
 # Upload settings
 CY8CKIT-062S2-AI-Kit.upload.tool=openocd
+# Not sure if we need all these parameters -> Ramya?
+# {
 CY8CKIT-062S2-AI-Kit.upload.protocol=openocd
 CY8CKIT-062S2-AI-Kit.upload.maximum_size=2097152
 CY8CKIT-062S2-AI-Kit.upload.speed=115200
 CY8CKIT-062S2-AI-Kit.communication=usb
+# }
+CY8CKIT-062S2-AI-Kit.upload.target_openocd_cfg=psoc6_2m.cfg
