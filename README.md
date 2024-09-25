@@ -1,6 +1,6 @@
 # Arduino Core for Infineon's PSoC Microcontrollers
 
---- CD badges go here ---
+[![docs build](https://readthedocs.org/projects/arduino-core-psoc/badge/?version=latest)](https://arduino-core-psoc.readthedocs.io/en/latest/?badge=latest)
 
 This repository integrates Infineon's [PSoC microcontrollers](https://www.infineon.com/cms/de/product/microcontroller/32-bit-psoc-arm-cortex-microcontroller/) into the [Arduino ecosystem](https://www.arduino.cc/en/main/software).
 
@@ -20,7 +20,7 @@ This repository integrates Infineon's [PSoC microcontrollers](https://www.infine
 
 ## Getting Started
 
-For installation & getting started instruction please refer to [our docs](TODO).
+For installation & getting started instruction please refer to [our docs](https://arduino-core-psoc.readthedocs.io/en/latest/).
 
 ## Additional Information
 
