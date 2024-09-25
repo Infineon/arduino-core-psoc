@@ -11,6 +11,7 @@
 # Ignore mtb build folder
 /mtb-libs/build
 /mtb-libs/bsps
+mtb_shared
  
 # Ignore files built by Visual Studio/Visual Micro
 [Dd]ebug/
