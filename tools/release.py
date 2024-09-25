@@ -10,7 +10,7 @@ import shutil
 version = "0.1.0"
 
 psoc_ino_root_path = os.path.relpath(
-    os.path.join(os.path.join(os.getcwd(), os.pardir), os.pardir)
+    os.getcwd()
 )
 build_dir_name = "pkg_build"
 pkg_assets_build_path = os.path.join(psoc_ino_root_path, build_dir_name)
@@ -71,7 +71,7 @@ def get_package_sha256(pkg):
 
 def get_latest_package_index_json():
     return requests.get(
-        "https://github.com/Infineon/arduino-core-psoc/releases/latest/download/package_psoc_index.json"
+        "https://github.com/Infineon/arduino-core-psoc/releases/download/v0.1.0-alpha/package_psoc_index.json"
     ).json()
 
 
