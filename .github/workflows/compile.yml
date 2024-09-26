@@ -26,7 +26,7 @@ jobs:
       matrix:
         # List of all examples in the lib to compile
         example: [
-            examples/testSketch.ino
+            examples/testSketch/testSketch.ino
         ]
 
         # board packages we want to run
@@ -74,4 +74,4 @@ jobs:
       # Compile the sample code for the selected board and board support package with the arduino compiler
       - name: Compile Sketch
         run: |
-          arduino-cli compile --fqbn ${{ matrix.fqbn }} ${{ matrix.example }}
+          arduino-cli compile -v --fqbn ${{ matrix.fqbn }} ${{ matrix.example }}
