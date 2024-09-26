@@ -19,6 +19,10 @@
 #define ARDUINO_MAIN
 #include "Arduino.h"
 
+#include "cyhal.h"
+#include "cybsp.h"
+#include "cy_retarget_io.h"
+
 // Weak empty variant initialization function.
 // May be redefined by variant files.
 void initVariant() __attribute__((weak));
@@ -30,7 +34,31 @@ void initVariant() { }
  */
 int main( void )
 {
+  cy_rslt_t result;
 
+  /* Initialize the device and board peripherals */
+  result = cybsp_init();
+
+  /* Board init failed. Stop program execution */
+  if (result != CY_RSLT_SUCCESS)
+  {
+      CY_ASSERT(0);
+  }
+
+  /* Enable global interrupts */
+  __enable_irq();
+
+  /* Initialize retarget-io to use the debug UART port */
+  result = cy_retarget_io_init_fc(CYBSP_DEBUG_UART_TX, CYBSP_DEBUG_UART_RX,
+          CYBSP_DEBUG_UART_CTS,CYBSP_DEBUG_UART_RTS,CY_RETARGET_IO_BAUDRATE);
+
+  /* retarget-io init failed. Stop program execution */
+  if (result != CY_RSLT_SUCCESS)
+  {
+      CY_ASSERT(0);
+  }
+
+  printf("Hello world from Infineon PSoC Arduino CORE :) :) :) !!!\n");
   initVariant();
 
   setup();
