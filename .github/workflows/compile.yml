@@ -58,7 +58,7 @@ jobs:
       - name: Set and check environment, install repos
         run: |
           export REPO="$(basename "$GITHUB_REPOSITORY")"
-          ln -sfn /opt/arduino-core-psoc ~/.arduino15/packages/Infineon-psoc
+          ln -sfn /opt/arduino-core-psoc ~/.arduino15/packages/Infineon
           # mkdir -p "$HOME/Arduino/libraries"
           # ln -sf $GITHUB_WORKSPACE/ $HOME/Arduino/libraries/$REPO
 
@@ -69,7 +69,7 @@ jobs:
       - name: Install/Update Arduino Platform
         run: |
           arduino-cli core update-index
-          arduino-cli core update-index --additional-urls https://github.com/Infineon/arduino-core-psoc/releases/download/untagged-8d34d20afb0e407037cb/package_ifx_psoc_index.json
+          arduino-cli core update-index --additional-urls https://github.com/Infineon/arduino-core-psoc/releases/download/v0.1.0-alpha/package_psoc_index.json
 
       # Compile the sample code for the selected board and board support package with the arduino compiler
       - name: Compile Sketch

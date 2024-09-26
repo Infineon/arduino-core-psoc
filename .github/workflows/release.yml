@@ -9,11 +9,19 @@ on:
       - 'V*.*.*'
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: 
+      - self-hosted
+      - X64
+      - Linux
+      - PSoC
+
     if: startsWith(github.ref, 'refs/tags/V')
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v4
+    - name: Checkout actions
+      uses: actions/checkout@v4
+
+    - name: Setup python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.x'
     - run: pip install requests
@@ -26,6 +34,7 @@ jobs:
 
     - name: Build release assets
       run: |
+        pwd
         cd ../../tools
         python release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
 
