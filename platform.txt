@@ -85,17 +85,19 @@ recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb
 
 recipe.hooks.prebuild.5.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ccxxflags {build.mtb_libs_board_build_path}/.cycompiler {build.mtb_libs_board_build_path}
 recipe.hooks.prebuild.6.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ldflags {build.mtb_libs_board_build_path}/.cylinker {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.7.pattern=python {runtime.platform.path}/tools/mtb_build_info.py inc_dirs {build.mtb_libs_board_build_path}/inclist.rsp {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
 compiler.flags.from_file=@{build.mtb_libs_board_build_path}/compiler_flags.txt
 compiler.elf_flags.from_file=@{build.mtb_libs_board_build_path}/linker_flags.txt
+compiler.inc_dirs.from_file=@{build.mtb_libs_board_build_path}/inc_dirs.txt
 
 
 # Includes
 includes=-I{build.path}/cores/psoc 
 
 # Build commands
-recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
-recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
-recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {includes} "{source_file}" -o "{object_file}"
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {compiler.inc_dirs.from_file} {includes} "{source_file}" -o "{object_file}"
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {compiler.inc_dirs.from_file} {includes} "{source_file}" -o "{object_file}"
+recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {compiler.inc_dirs.from_file} {includes} "{source_file}" -o "{object_file}"
 
 ## Create archives
 # ----------------
@@ -107,7 +109,7 @@ recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {compil
 compiler.mtb_lib.path = "{runtime.platform.path}/mtb-libs/build/APP_{build.variant}/Debug/mtb-libs.a"
 
 # Linker command
-recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.elf_flags.from_file} {compiler.mtb_lib.path} {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} {archive_file_path}   -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.elf_flags.from_file} {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} {archive_file_path}   -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"  {compiler.mtb_lib.path}
 
 ## Compute size
 # ----------------
