@@ -35,8 +35,7 @@ jobs:
     - name: Build release assets
       run: |
         pwd
-        cd ../../tools
-        python release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
+        python ./tools/release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
 
     - name: Upload assets
       uses: softprops/action-gh-release@v1
