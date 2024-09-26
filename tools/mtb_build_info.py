@@ -70,6 +70,20 @@ def get_ld_linker_flags(cylinker_file, mtb_libs_path, out_path):
     with open(os.path.join(out_path, "linker_flags.txt"), 'w') as file:
         file.write(joined_flags)
 
+def get_inc_dirs(inc_dirs_file, mtb_libs_path, out_path):
+
+    inc_list = get_file_content(inc_dirs_file)
+    inc_list_list = inc_list.split()    
+
+    # Add the mtb-libs path to the include directories
+    inc_list_with_updated_path = [inc_dir.replace("-I","-I"+str(mtb_libs_path)+"/") for inc_dir in inc_list_list]
+    print(*inc_list_with_updated_path)
+
+    # Join the list into a single string with spaces between flags and write into a file
+    joined_inc_dirs = ' '.join(inc_list_with_updated_path)
+    os.makedirs(out_path, exist_ok=True)
+    with open(os.path.join(out_path, "inc_dirs.txt"), 'w') as file:
+        file.write(joined_inc_dirs)
 
 def parser():
     def main_parser_func(args):
@@ -80,6 +94,9 @@ def parser():
 
     def parser_get_ldflags_func(args):
         get_ld_linker_flags(args.cylinker_file, args.mtb_libs_path, args.out_path)
+
+    def parser_get_inc_func(args):
+        get_inc_dirs(args.inclist_file, args.mtb_libs_path, args.out_path)
 
     parser = argparse.ArgumentParser(description="Utility to retrieve ModusToolbox build info")
     subparser = parser.add_subparsers()
@@ -95,6 +112,12 @@ def parser():
     parser_ld.add_argument("mtb_libs_path", type=str, help="Path to mtb-libs folder")
     parser_ld.add_argument("out_path", type=str, help="Path to output folder")
     parser_ld.set_defaults(func=parser_get_ldflags_func)
+
+    parser_inc = subparser.add_parser("inc_dirs", description="Get include dirs -I")
+    parser_inc.add_argument("inclist_file", type=str, help="inclist.rsp file")
+    parser_inc.add_argument("mtb_libs_path", type=str, help="Path to mtb-libs folder")
+    parser_inc.add_argument("out_path", type=str, help="Path to output folder")
+    parser_inc.set_defaults(func=parser_get_inc_func)
 
     # Parser call
     args = parser.parse_args()
