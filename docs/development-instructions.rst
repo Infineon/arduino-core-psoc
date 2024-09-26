@@ -111,12 +111,19 @@ Installing the ArduinoCore-API
 
 1. Locate in your computer where the Arduino15 packages are installed. By default:
 
-   ::
+   .. tabs::
 
-      ~/.arduino15/
+      .. group-tab:: Linux
 
-   .. TODO: I would postpone the Windows part, as we won´t have all the dev tools available there
-            c:/Users/%USERNAME%/AppData/local/Arduino15 
+         ::
+
+             ~/.arduino15/
+
+      .. group-tab:: Windows
+
+         ::
+
+            C:/Users/%USERNAME%/AppData/Local/Arduino15                
 
 2. Change directories to the following path, where your ``arduino-core-psoc`` repository should be cloned:
 
@@ -139,9 +146,21 @@ Installing the ArduinoCore-API
 
 5. Copy or symlink the ``api`` folder from the ArduinoCore-API submodule
 
-   ::
+   .. tabs::
+      
+      .. group-tab:: Linux
 
-      ln -s ../extras/arduino-core-api/api .
+        ::
+
+            ln -s ../../extras/arduino-core-api/api .
+
+      .. group-tab:: Windows
+
+         Use here absolute paths instead: 
+
+         ::
+
+            mklink /D "C:\Users\%USERNAME%\AppData\Local\Arduino15\packages\infineon\hardware\psoc\<x.y.z>\cores\psoc\api" "C:\Users\%USERNAME%\AppData\Local\Arduino15\packages\infineon\hardware\psoc\<x.y.z>\extras\arduino-core-api\api"
 
 6. You should see now the ``api`` folder in the ``cores/psoc`` directory.
 
