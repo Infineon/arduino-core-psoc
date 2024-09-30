@@ -5,8 +5,8 @@
 
 # The information about this Arduino compatible environment
 # ---------
-name=PSoC Family
-version=0.0.1
+name=Infineon PSOC Boards
+version=0.0.0
 
 # Build related core definitions
 # ---------
