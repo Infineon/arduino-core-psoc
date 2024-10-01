@@ -56,13 +56,15 @@ jobs:
           rm -rf *
 
       - name: Checkout repository 
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        #with:
+          #submodules: true
+          #recursive-submodules: true
       
       - name: Setup environment
         run: |
-          git submodule init
-          git submodule update
           export REPO="$(basename "$GITHUB_REPOSITORY")"
+          bash ./tools/dev-setup.sh git_submodule_setup
 
       - name: copy/link repository to arduino path
         run: |
@@ -78,5 +80,4 @@ jobs:
       # Compile the sample code for the selected board and board support package with the arduino compiler
       - name: Compile Sketch
         run: |
-          export CY_TOOLS_PATHS=~/.arduino15/packages/infineon/tools/ModusToolbox/tools_3.2
           arduino-cli compile --clean --verbose --fqbn ${{ matrix.fqbn }} ${{ matrix.example }}
