@@ -11,8 +11,7 @@ version=0.0.0
 # Build related core definitions
 # ---------
 build.core.path={runtime.platform.path}/core
-build.flash_ld_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/{build.flash_ld}
-build.assembly_file_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/{build.startup_s}
+build.flash_ld_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/linker.ld
 build.mtb_libs_board_build_path={runtime.platform.path}/mtb-libs/build/APP_{build.variant}/Debug
 
 # Compiler and toolchain paths
@@ -42,7 +41,8 @@ compiler.arduino_core_api.path= "-I{compiler.arduino_core_dep_avr.path}" "-I{com
 
 
 # GCC related definitions
-compiler.c.flags=-mtune={build.mcu} -c -g -Os {compiler.warning_flags} -std=gnu11  -nostdlib --param max-inline-insns-single=500 -MMD
+# Some flags might not be required : -mtune={build.mcu}
+compiler.c.flags= -c -g -Os {compiler.warning_flags} -std=gnu11  -nostdlib --param max-inline-insns-single=500 -MMD
 compiler.c.extra_flags=
 compiler.libraries.ldflags=
 
@@ -52,11 +52,13 @@ compiler.cpp.elf.flags={compiler.c.elf.flags}
 compiler.c.elf.extra_flags=
 
 # G++ related definitions
-compiler.cpp.flags=-mtune={build.mcu} -fpermissive -c -g -Os {compiler.warning_flags} -std=gnu++11 -fno-threadsafe-statics -nostdlib --param max-inline-insns-single=500 -fno-rtti -fno-exceptions -MMD
+# Some flags might not be required : -mtune={build.mcu}
+compiler.cpp.flags= -fpermissive -c -g -Os {compiler.warning_flags} -std=gnu++11 -fno-threadsafe-statics -nostdlib --param max-inline-insns-single=500 -fno-rtti -fno-exceptions -MMD
 compiler.cpp.extra_flags=
 
 # Assembler related definitions
-compiler.S.flags=-mcpu={build.mcu} -mthumb -c -g -x assembler-with-cpp
+# Some flags might not be required : -mcpu={build.mcu} --> from MTB already
+compiler.S.flags= -mthumb -c -g -x assembler-with-cpp
 compiler.S.extra_flags=-w
 
 # Archives & binaries related definitions
@@ -71,12 +73,12 @@ mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash
 
 # Prebuild Hooks
 
-recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant}
+recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant} --add-bsp-version {build.board.version}
 recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
 recipe.hooks.prebuild.3.pattern.windows={libmanager} --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
 recipe.hooks.prebuild.4.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant}"
 
-recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant}; fi'
+recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant} --add-bsp-version {build.board.version}; fi'
 recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant}; fi'
 recipe.hooks.prebuild.3.pattern.linux={libmanager} --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
 recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant}'
@@ -144,7 +146,7 @@ tools.openocd.search_paths=-s {path}/scripts -s {board_cfg_search_path}
 # This is provided by the serial discovery properties of the selected upload port
 tools.openocd.serial_adapter=adapter serial {upload.port.properties.serialNumber}
 # openocd program command to flash the built .hex 
-tools.openocd.command=-c "source [find interface/kitprog3.cfg]; {serial_adapter} ; source [find target/{upload.target_openocd_cfg}]; psoc6 allow_efuse_program off; psoc6 sflash_restrictions 1; program {build.path}/{build.project_name}.hex verify reset exit;"
+tools.openocd.command=-c "source [find interface/kitprog3.cfg]; {serial_adapter} ; source [find target/{upload.target.cfg}]; psoc6 allow_efuse_program off; psoc6 sflash_restrictions 1; program {build.path}/{build.project_name}.hex verify reset exit;"
 # By default openocd is verbose with debug level 2
 tools.openocd.upload.params.verbose= 
 # For quiet mode, the output is stored in a openocd.log file in the build path
