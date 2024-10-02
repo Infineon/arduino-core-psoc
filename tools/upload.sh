@@ -4,7 +4,7 @@
 upload_cmd=$1
 
 # Paths
-openocd_path=$2
+mtb_tools_path=$2
 platform_path=$3
 build_path=$4
 
@@ -20,7 +20,7 @@ project_name=$8
 verbose_flag=$9
 
 function get_openocd_exe {
-    openocd_exe="${openocd_path}/bin/openocd"
+    openocd_exe="${mtb_tools_path}/openocd/bin/openocd"
     # Depending on the OS, the openocd executable 
     # file extension changes.
     # Add ".exe" extension if the OS is Windows or cygwin
@@ -33,7 +33,7 @@ function get_openocd_exe {
 function get_openocd_search_paths {
     # openocd config files search paths
     # A board support package might have additional openocd config files in its GeneratedSources path
-    search_paths="-s ${openocd_path}/scripts -s ${platform_path}/mtb-libs/bsps/TARGET_APP_${board_variant}/config/GeneratedSource"
+    search_paths="-s ${mtb_tools_path}/openocd/scripts -s ${platform_path}/mtb-libs/bsps/TARGET_APP_${board_variant}/config/GeneratedSource"
     echo ${search_paths}
 }
 
@@ -114,7 +114,7 @@ function parse_upload_err_code {
 function upload {
     upload_pattern=$(get_upload_pattern)
     # This will hide the openocd banner, 
-    # which is even printer when using log file output
+    # which is even printed when using log file output
     hide_output="> /dev/null"
 
     if [[ ${verbose_flag} == "-v" ]]; then
@@ -131,12 +131,12 @@ function upload {
 function help {
     echo "Usage: "
     echo 
-    echo "  bash upload.sh upload <openocd_path> <platform_path> <build_path> <board_variant> <board_serial_num> <board_openocd_cfg> <project_name> [-v]"
+    echo "  bash upload.sh upload <mtb_tools_path> <platform_path> <build_path> <board_variant> <board_serial_num> <board_openocd_cfg> <project_name> [-v]"
     echo "  bash upload.sh help"
     echo
     echo "Positional arguments for 'upload' command:"
     echo 
-    echo "  openocd_path          Path to the openocd package directory"
+    echo "  mtb_tools_path        Path to the MTB tools directory"
     echo "  platform_path         Path to the platform directory"
     echo "  build_path            Path to the build directory"
     echo
@@ -157,7 +157,7 @@ function print_args {
     echo
     echo "Paths"
     echo "-----"
-    echo "openocd_path       ${openocd_path}"
+    echo "mtb_tools_path     ${mtb_tools_path}"
     echo "platform_path      ${platform_path}"
     echo "build_path         ${build_path}"
     echo
