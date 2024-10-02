@@ -1,7 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 
-
 REM Get the arguments passed in the command line
 
 REM Command
@@ -21,7 +20,6 @@ REM Project parameters
 set project_name=%8
 
 REM "Optional arguments"
-REM To access 10th argument, we need to shift
 set verbose_flag=%9
 
 REM Replace backslashes with forward slashes
