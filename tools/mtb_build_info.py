@@ -77,6 +77,8 @@ def get_inc_dirs(inc_dirs_file, mtb_libs_path, out_path):
 
     # Add the mtb-libs path to the include directories
     inc_list_with_updated_path = [inc_dir.replace("-I","-I"+str(mtb_libs_path)+"/") for inc_dir in inc_list_list]
+    # If windows path, replace backslashes with forward slashes
+    inc_list_with_updated_path = [inc_dir.replace("\\", "/") for inc_dir in inc_list_with_updated_path]
     print(*inc_list_with_updated_path)
 
     # Join the list into a single string with spaces between flags and write into a file
