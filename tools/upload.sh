@@ -21,12 +21,6 @@ verbose_flag=$9
 
 function get_openocd_exe {
     openocd_exe="${mtb_tools_path}/openocd/bin/openocd"
-    # Depending on the OS, the openocd executable 
-    # file extension changes.
-    # Add ".exe" extension if the OS is Windows or cygwin
-    if [[ "$OSTYPE" == "msys" ]]; then
-        openocd_exe="${openocd_exe}.exe"
-    fi
     echo ${openocd_exe}
 }
 
