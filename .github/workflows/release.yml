@@ -10,10 +10,14 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     if: startsWith(github.ref, 'refs/tags/V')
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v4
+    - name: Checkout actions
+      uses: actions/checkout@v4
+
+    - name: Setup python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.x'
     - run: pip install requests
@@ -26,8 +30,8 @@ jobs:
 
     - name: Build release assets
       run: |
-        cd .github/scripts
-        python release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
+        bash ./tools/dev-setup.sh
+        python ./tools/release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
 
     - name: Upload assets
       uses: softprops/action-gh-release@v1
@@ -35,5 +39,5 @@ jobs:
         name: PSoC-for-Arduino ${{  github.ref_name  }}
         files: |
           pkg_build/*.zip
-          pkg_build/package_infineon_index.json
+          pkg_build/package_psoc_index.json
         body: ${{steps.build_changelog.outputs.changelog}}

@@ -20,5 +20,15 @@ function core_api_setup {
     ln -sf ${core_api_submodule_dir}/api ${cores_psoc_dir}
 }
 
-git_submodule_setup
-core_api_setup
+# Check if a function name is passed as an argument
+if [ $# -gt 0 ]; then
+    if declare -f "$1" > /dev/null; then
+        "$1"
+    else
+        echo "Function $1 not found"
+        exit 1
+    fi
+else
+    git_submodule_setup
+    core_api_setup
+fi

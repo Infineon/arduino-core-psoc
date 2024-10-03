@@ -43,7 +43,7 @@ Environment setup
 
    ::
 
-      cd packages/Infineon-psoc/hardware/psoc
+      cd packages/infineon/hardware/psoc
 
    ..
       TODO: We already have the "Infineon" package (from XMC-for-Arduino). We should go for "infineon" instead of "infineon-psoc". And

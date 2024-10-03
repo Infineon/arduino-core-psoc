@@ -7,10 +7,10 @@ import requests
 import os
 import shutil
 
-version = "0.2.0"
+version = "0.1.0"
 
 psoc_ino_root_path = os.path.relpath(
-    os.path.join(os.path.join(os.getcwd(), os.pardir), os.pardir)
+    os.getcwd()
 )
 build_dir_name = "pkg_build"
 pkg_assets_build_path = os.path.join(psoc_ino_root_path, build_dir_name)
@@ -32,12 +32,10 @@ def mkdir_package_dir(version):
 def build_package(pkg_name):
     pkg_build_path = os.path.join(pkg_assets_build_path, pkg_name)
 
-    dirs_to_copy = ["cores", "libraries", "tools", "variants"]
+    dirs_to_copy = ["cores", "tools", "mtb-libs", "examples"]
 
     files_to_copy = [
         "boards.txt",
-        "keywords.txt",
-        "package.json",
         "platform.txt",
         "LICENSE.md",
         "README.md",
@@ -73,14 +71,14 @@ def get_package_sha256(pkg):
 
 def get_latest_package_index_json():
     return requests.get(
-        "https://github.com/Infineon/arduino-core-psoc/releases/latest/download/package_infineon_index.json"
+        "https://github.com/Infineon/arduino-core-psoc/releases/download/0.0.0-none/package_psoc_index.json"
     ).json()
 
 
 def get_local_package_index_json():
     with open(
         os.path.join(
-            psoc_ino_root_path, "package/package_infineon_index.template.json"
+            psoc_ino_root_path, "package/package_psoc_index.template.json"
         ),
         "r",
     ) as f:

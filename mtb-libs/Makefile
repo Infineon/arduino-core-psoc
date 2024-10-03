@@ -173,20 +173,6 @@ CY_GETLIBS_SHARED_NAME=mtb_shared
 # software provided compiler by default).
 CY_COMPILER_GCC_ARM_DIR=
 
-
-# Locate ModusToolbox helper tools folders in default installation
-# locations for Windows, Linux, and macOS.
-CY_WIN_HOME=$(subst \,/,$(USERPROFILE))
-CY_TOOLS_PATHS ?= $(wildcard \
-    $(CY_WIN_HOME)/ModusToolbox/tools_* \
-    $(HOME)/ModusToolbox/tools_* \
-    /Applications/ModusToolbox/tools_*)
-
-# If you install ModusToolbox software in a custom location, add the path to its
-# "tools_X.Y" folder (where X and Y are the version number of the tools
-# folder). Make sure you use forward slashes.
-CY_TOOLS_PATHS+=
-
 # Default to the newest installed tools folder, or the users override (if it's
 # found).
 CY_TOOLS_DIR=$(lastword $(sort $(wildcard $(CY_TOOLS_PATHS))))

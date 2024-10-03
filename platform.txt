@@ -13,7 +13,7 @@ version=0.0.0
 build.core.path={runtime.platform.path}/core
 build.flash_ld_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/linker.ld
 build.mtb_libs_board_build_path={runtime.platform.path}/mtb-libs/build/APP_{build.variant}/Debug
-
+build.lib_path={runtime.platform.path}/mtb-libs/libs/core-make.mtb
 # Compiler and toolchain paths
 # ---------
 
@@ -74,14 +74,12 @@ mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash
 # Prebuild Hooks
 
 recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant} --add-bsp-version {build.board.version}
-recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant}"
-recipe.hooks.prebuild.3.pattern.windows={libmanager} --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
-recipe.hooks.prebuild.4.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant}"
+recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.lib_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}"
+recipe.hooks.prebuild.4.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}"
 
 recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant} --add-bsp-version {build.board.version}; fi'
-recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant}; fi'
-recipe.hooks.prebuild.3.pattern.linux={libmanager} --project {runtime.platform.path}/mtb-libs --set-active-bsp APP_{build.variant}
-recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant}'
+recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.lib_path}" ]; then cd {runtime.platform.path}/mtb-libs && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}; fi'
+recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}'
 
 # Prebuild Hook to Fetch Compiler and Linker Flags from mtb-libs build
 
