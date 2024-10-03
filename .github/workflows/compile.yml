@@ -33,12 +33,12 @@ jobs:
         # attention the matrix spans over the fqbn not platform so that we can choose different boards
         # this example compiles each sample code for Arduino Uno, XMC2Go and XMC4700 boards
         fqbn: [
-          "infineon:psoc:CY8CKIT-062S2-AI-Kit"
+          "infineon:psoc:cy8ckit_062s2_ai"
         ]
 
         # include additional information for each fqbn, in this case the platform name to install
         include:
-        - fqbn:     "infineon:psoc:CY8CKIT-062S2-AI-Kit"
+        - fqbn:     "infineon:psoc:cy8ckit_062s2_ai"
           platform: "infineon:psoc"
 
     # These are the steps which should run for each combination of fqbn and example code
