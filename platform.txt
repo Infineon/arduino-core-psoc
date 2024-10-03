@@ -132,21 +132,9 @@ recipe.output.save_file={build.project_name}.{build.variant}.bin
 # Upload .hex file
 # ----------------
 
-tools.openocd.path={runtime.tools.ModusToolbox.path}/openocd
-tools.openocd.program_ext.linux=
-tools.openocd.program_ext.windows=.exe
-tools.openocd.program={path}/bin/openocd{program_ext}
-# A BSP might have additional openocd config files in its GeneratedSources path
-tools.openocd.board_cfg_search_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/config/GeneratedSource
-# openocd config files search paths
-tools.openocd.search_paths=-s {path}/scripts -s {board_cfg_search_path}
-# openocd requires the adapter serial number to distinguish when multiple boards are connected
-# This is provided by the serial discovery properties of the selected upload port
-tools.openocd.serial_adapter=adapter serial {upload.port.properties.serialNumber}
-# openocd program command to flash the built .hex 
-tools.openocd.command=-c "source [find interface/kitprog3.cfg]; {serial_adapter} ; source [find target/{upload.target.cfg}]; psoc6 allow_efuse_program off; psoc6 sflash_restrictions 1; program {build.path}/{build.project_name}.hex verify reset exit;"
-# By default openocd is verbose with debug level 2
-tools.openocd.upload.params.verbose= 
-# For quiet mode, the output is stored in a openocd.log file in the build path
-tools.openocd.upload.params.quiet=-l {build.path}/{build.project_name}.openocd.log
-tools.openocd.upload.pattern={program} {upload.verbose} {search_paths} {command}
+tools.openocd.upload.params.verbose=-v
+tools.openocd.upload.params.quiet=
+tools.openocd.upload.params.args=upload {runtime.tools.ModusToolbox.path} {runtime.platform.path} {build.path} {build.variant} {upload.port.properties.serialNumber} {upload.target.cfg} {build.project_name} {upload.verbose}
+
+tools.openocd.upload.pattern.linux=bash {runtime.platform.path}/tools/upload.sh {upload.params.args}
+tools.openocd.upload.pattern.windows={runtime.platform.path}/tools/upload.bat {upload.params.args}
