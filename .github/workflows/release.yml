@@ -1,4 +1,4 @@
-name: PSoC-for-Arduino Release Automation
+name: Release Automation
 
 on:
   release:
