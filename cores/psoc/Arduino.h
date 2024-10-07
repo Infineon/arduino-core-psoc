@@ -30,15 +30,15 @@
 
 using namespace arduino;
 
-extern "C"{
+extern "C" {
 #endif // __cplusplus
 
 // Include Atmel headers
 #undef LITTLE_ENDIAN
 
-#define clockCyclesPerMicrosecond() ( SystemCoreClock / 1000000L )
-#define clockCyclesToMicroseconds(a) ( ((a) * 1000L) / (SystemCoreClock / 1000L) )
-#define microsecondsToClockCycles(a) ( (a) * (SystemCoreClock / 1000000L) )
+#define clockCyclesPerMicrosecond() (SystemCoreClock / 1000000L)
+#define clockCyclesToMicroseconds(a) (((a) * 1000L) / (SystemCoreClock / 1000L))
+#define microsecondsToClockCycles(a) ((a) * (SystemCoreClock / 1000000L))
 
 #ifdef __cplusplus
 } // extern "C"
@@ -50,7 +50,7 @@ extern "C"{
 #undef abs
 #endif // abs
 
-#define abs(x) ((x)>0?(x):-(x))
+#define abs(x) ((x) > 0?(x):-(x))
 
 
 #ifdef __cplusplus
