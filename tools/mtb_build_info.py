@@ -32,9 +32,9 @@ def get_ccxx_build_flags(cycompiler_file, out_path):
     print(*ccxx_flags)
 
     # Join the list into a single string with spaces between flags and write into a file
-    joined_flags = ' '.join(ccxx_flags)
+    joined_flags = " ".join(ccxx_flags)
     os.makedirs(out_path, exist_ok=True)
-    with open(os.path.join(out_path, "compiler_flags.txt"), 'w') as file:
+    with open(os.path.join(out_path, "compiler_flags.txt"), "w") as file:
         file.write(joined_flags)
 
 
@@ -45,13 +45,20 @@ def get_ld_linker_flags(cylinker_file, mtb_libs_path, out_path):
         return link_cmd_list.index(gcc_cmd[0]) + 1
 
     def find_flags_end(link_cmd_list):
-        link_script_file_param = [item for item in link_cmd_list if item.startswith("-T")]
+        link_script_file_param = [
+            item for item in link_cmd_list if item.startswith("-T")
+        ]
         return link_cmd_list.index(link_script_file_param[0]) + 1
 
-    def set_path_of_linker_script(link_cmd_list, inker_script_param_index, mtb_libs_path):
+    def set_path_of_linker_script(
+        link_cmd_list, inker_script_param_index, mtb_libs_path
+    ):
         mtb_libs_path = mtb_libs_path.replace("\\", "/")
         link_cmd_list[inker_script_param_index] = (
-            "-T " + str(mtb_libs_path) + "/" + link_cmd_list[inker_script_param_index][len("-T") :]
+            "-T "
+            + str(mtb_libs_path)
+            + "/"
+            + link_cmd_list[inker_script_param_index][len("-T") :]
         )
 
     link_cmd = get_file_content(cylinker_file)
@@ -63,29 +70,36 @@ def get_ld_linker_flags(cylinker_file, mtb_libs_path, out_path):
 
     ld_flags = link_cmd_list[start_idx:end_idx]
     print(*ld_flags)
-    
+
     # Join the list into a single string with spaces between flags and write into a file
-    joined_flags = ' '.join(ld_flags)
+    joined_flags = " ".join(ld_flags)
     os.makedirs(out_path, exist_ok=True)
-    with open(os.path.join(out_path, "linker_flags.txt"), 'w') as file:
+    with open(os.path.join(out_path, "linker_flags.txt"), "w") as file:
         file.write(joined_flags)
+
 
 def get_inc_dirs(inc_dirs_file, mtb_libs_path, out_path):
 
     inc_list = get_file_content(inc_dirs_file)
-    inc_list_list = inc_list.split()    
+    inc_list_list = inc_list.split()
 
     # Add the mtb-libs path to the include directories
-    inc_list_with_updated_path = [inc_dir.replace("-I","-I"+str(mtb_libs_path)+"/") for inc_dir in inc_list_list]
+    inc_list_with_updated_path = [
+        inc_dir.replace("-I", "-I" + str(mtb_libs_path) + "/")
+        for inc_dir in inc_list_list
+    ]
     # If windows path, replace backslashes with forward slashes
-    inc_list_with_updated_path = [inc_dir.replace("\\", "/") for inc_dir in inc_list_with_updated_path]
+    inc_list_with_updated_path = [
+        inc_dir.replace("\\", "/") for inc_dir in inc_list_with_updated_path
+    ]
     print(*inc_list_with_updated_path)
 
     # Join the list into a single string with spaces between flags and write into a file
-    joined_inc_dirs = ' '.join(inc_list_with_updated_path)
+    joined_inc_dirs = " ".join(inc_list_with_updated_path)
     os.makedirs(out_path, exist_ok=True)
-    with open(os.path.join(out_path, "inc_dirs.txt"), 'w') as file:
+    with open(os.path.join(out_path, "inc_dirs.txt"), "w") as file:
         file.write(joined_inc_dirs)
+
 
 def parser():
     def main_parser_func(args):
@@ -100,11 +114,15 @@ def parser():
     def parser_get_inc_func(args):
         get_inc_dirs(args.inclist_file, args.mtb_libs_path, args.out_path)
 
-    parser = argparse.ArgumentParser(description="Utility to retrieve ModusToolbox build info")
+    parser = argparse.ArgumentParser(
+        description="Utility to retrieve ModusToolbox build info"
+    )
     subparser = parser.add_subparsers()
     parser.set_defaults(func=main_parser_func)
 
-    parser_ccxx = subparser.add_parser("ccxxflags", description="Get C and CXX build flags")
+    parser_ccxx = subparser.add_parser(
+        "ccxxflags", description="Get C and CXX build flags"
+    )
     parser_ccxx.add_argument("cycompiler_file", type=str, help=".cycompiler file")
     parser_ccxx.add_argument("out_path", type=str, help="Path to output folder")
     parser_ccxx.set_defaults(func=parser_get_ccxxflags_func)
