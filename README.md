@@ -1,5 +1,9 @@
 # Arduino Core for Infineon's PSoC Microcontrollers
 
+[![build on Linux](https://github.com/Infineon/arduino-core-psoc/actions/workflows/compile.yml/badge.svg)](https://github.com/Infineon/arduino-core-psoc/actions)
+[![code format check](https://github.com/Infineon/arduino-core-psoc/actions/workflows/code_formatting.yml/badge.svg)](https://github.com/Infineon/arduino-core-psoc/actions)
+[![code spell check](https://github.com/Infineon/arduino-core-psoc/actions/workflows/codespell.yml/badge.svg)](https://github.com/Infineon/arduino-core-psoc/actions)
+[![commit message check](https://github.com/Infineon/arduino-core-psoc/actions/workflows/commit_formatting.yml/badge.svg)](https://github.com/Infineon/arduino-core-psoc/actions)
 [![docs build](https://readthedocs.org/projects/arduino-core-psoc/badge/?version=latest)](https://arduino-core-psoc.readthedocs.io/en/latest/?badge=latest)
 
 This repository integrates Infineon's [PSoC microcontrollers](https://www.infineon.com/cms/de/product/microcontroller/32-bit-psoc-arm-cortex-microcontroller/) into the [Arduino ecosystem](https://www.arduino.cc/en/main/software).

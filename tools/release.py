@@ -9,9 +9,7 @@ import shutil
 
 version = "0.1.0"
 
-psoc_ino_root_path = os.path.relpath(
-    os.getcwd()
-)
+psoc_ino_root_path = os.path.relpath(os.getcwd())
 build_dir_name = "pkg_build"
 pkg_assets_build_path = os.path.join(psoc_ino_root_path, build_dir_name)
 
@@ -77,9 +75,7 @@ def get_latest_package_index_json():
 
 def get_local_package_index_json():
     with open(
-        os.path.join(
-            psoc_ino_root_path, "package/package_psoc_index.template.json"
-        ),
+        os.path.join(psoc_ino_root_path, "package/package_psoc_index.template.json"),
         "r",
     ) as f:
         data = json.load(f)

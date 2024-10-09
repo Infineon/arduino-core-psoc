@@ -1,4 +1,4 @@
-name: Arduino Core PSoC CI compile
+name: Build on Linux OS
 
 # on which event should we start push, pull request or schedule dispatches
 on:
