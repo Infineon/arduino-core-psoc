@@ -74,18 +74,18 @@ mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash
 # Prebuild Hooks
 
 recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant} --add-bsp-version {build.board.version}
-recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.lib_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}"
-recipe.hooks.prebuild.4.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}"
+recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.lib_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant} CY_TOOLS_PATHS="C:/Users/subramar/AppData/Local/Arduino15/packages/infineon/tools/ModusToolbox/tools_3.2""
+recipe.hooks.prebuild.3.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant} CY_TOOLS_PATHS="C:/Users/subramar/AppData/Local/Arduino15/packages/infineon/tools/ModusToolbox/tools_3.2""
 
 recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant} --add-bsp-version {build.board.version}; fi'
 recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.lib_path}" ]; then cd {runtime.platform.path}/mtb-libs && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}; fi'
-recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}'
+recipe.hooks.prebuild.3.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}'
 
 # Prebuild Hook to Fetch Compiler and Linker Flags from mtb-libs build
 
-recipe.hooks.prebuild.5.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ccxxflags {build.mtb_libs_board_build_path}/.cycompiler {build.mtb_libs_board_build_path}
-recipe.hooks.prebuild.6.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ldflags {build.mtb_libs_board_build_path}/.cylinker {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
-recipe.hooks.prebuild.7.pattern=python {runtime.platform.path}/tools/mtb_build_info.py inc_dirs {build.mtb_libs_board_build_path}/inclist.rsp {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.4.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ccxxflags {build.mtb_libs_board_build_path}/.cycompiler {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.5.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ldflags {build.mtb_libs_board_build_path}/.cylinker {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.6.pattern=python {runtime.platform.path}/tools/mtb_build_info.py inc_dirs {build.mtb_libs_board_build_path}/inclist.rsp {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
 compiler.flags.from_file=@{build.mtb_libs_board_build_path}/compiler_flags.txt
 compiler.elf_flags.from_file=@{build.mtb_libs_board_build_path}/linker_flags.txt
 compiler.inc_dirs.from_file=@{build.mtb_libs_board_build_path}/inc_dirs.txt
