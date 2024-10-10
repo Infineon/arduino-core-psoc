@@ -74,8 +74,8 @@ mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash
 # Prebuild Hooks
 
 recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant} --add-bsp-version {build.board.version}
-recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.lib_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant} CY_TOOLS_PATHS="C:/Users/subramar/AppData/Local/Arduino15/packages/infineon/tools/ModusToolbox/tools_3.2""
-recipe.hooks.prebuild.3.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant} CY_TOOLS_PATHS="C:/Users/subramar/AppData/Local/Arduino15/packages/infineon/tools/ModusToolbox/tools_3.2""
+recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.lib_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant} CY_TOOLS_PATHS="{compiler.mtb_lib_tools.path}""
+recipe.hooks.prebuild.3.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant} CY_TOOLS_PATHS="{compiler.mtb_lib_tools.path}""
 
 recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant} --add-bsp-version {build.board.version}; fi'
 recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.lib_path}" ]; then cd {runtime.platform.path}/mtb-libs && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}; fi'
