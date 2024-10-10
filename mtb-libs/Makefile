@@ -173,12 +173,20 @@ CY_GETLIBS_SHARED_NAME=mtb_shared
 # software provided compiler by default).
 CY_COMPILER_GCC_ARM_DIR=
 
+# Replace backward slashes with forward slashes in a path
+define replace_backslashes
+$(subst \,/,$(1))
+endef
+
+# Define a new path with backward slashes replaced by forward slashes
+CY_TOOLS_PATHS_NEW=$(call replace_backslashes,$(CY_TOOLS_PATHS))
+
 # Default to the newest installed tools folder, or the users override (if it's
 # found).
-CY_TOOLS_DIR=$(lastword $(sort $(wildcard $(CY_TOOLS_PATHS))))
+CY_TOOLS_DIR=$(lastword $(sort $(wildcard $(CY_TOOLS_PATHS_NEW))))
 
 ifeq ($(CY_TOOLS_DIR),)
-$(error Unable to find any of the available CY_TOOLS_PATHS -- $(CY_TOOLS_PATHS). On Windows, use forward slashes.)
+$(error Unable to find any of the available CY_TOOLS_PATHS -- $(CY_TOOLS_PATHS_NEW). On Windows, use forward slashes.)
 endif
 
 $(info Tools Directory: $(CY_TOOLS_DIR))
