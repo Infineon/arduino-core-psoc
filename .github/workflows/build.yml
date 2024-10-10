@@ -57,14 +57,13 @@ jobs:
 
       - name: Checkout repository 
         uses: actions/checkout@v4
-        #with:
-          #submodules: true
-          #recursive-submodules: true
+        with:
+          submodules: true
       
-      - name: Setup environment
-        run: |
-          export REPO="$(basename "$GITHUB_REPOSITORY")"
-          bash ./tools/dev-setup.sh git_submodule_setup
+      # - name: Setup environment
+      #   run: |
+      #     export REPO="$(basename "$GITHUB_REPOSITORY")"
+      #     bash ./tools/dev-setup.sh git_submodule_setup
 
       - name: copy/link repository to arduino path
         run: |
