@@ -1,0 +1,43 @@
+name: Release Automation
+
+on:
+  release:
+    types: published
+  push:
+    tags: 
+      - 'v*.*.*'
+      - 'V*.*.*'
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    if: startsWith(github.ref, 'refs/tags/V')
+    steps:
+    - name: Checkout actions
+      uses: actions/checkout@v4
+
+    - name: Setup python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    - run: pip install requests
+
+    - name: Build release changelog
+      id: build_changelog
+      uses: mikepenz/release-changelog-builder-action@v3
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build release assets
+      run: |
+        bash ./tools/dev-setup.sh
+        python ./tools/release.py build-release ${{ github.repository }} ${{ github.ref_name }} 
+
+    - name: Upload assets
+      uses: softprops/action-gh-release@v1
+      with:
+        name: PSoC-for-Arduino ${{  github.ref_name  }}
+        files: |
+          pkg_build/*.zip
+          pkg_build/package_psoc_index.json
+        body: ${{steps.build_changelog.outputs.changelog}}
