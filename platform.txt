@@ -1,0 +1,140 @@
+# PSoC platform
+# ------------------------------
+# For more info:
+# https://arduino.github.io/arduino-cli/platform-specification/
+
+# The information about this Arduino compatible environment
+# ---------
+name=Infineon PSOC Boards
+version=0.0.0
+
+# Build related core definitions
+# ---------
+build.core.path={runtime.platform.path}/core
+build.flash_ld_path={runtime.platform.path}/mtb-libs/bsps/TARGET_APP_{build.variant}/COMPONENT_CM4/TOOLCHAIN_GCC_ARM/linker.ld
+build.mtb_libs_board_build_path={runtime.platform.path}/mtb-libs/build/APP_{build.variant}/Debug
+build.lib_path={runtime.platform.path}/mtb-libs/libs/core-make.mtb
+# Compiler and toolchain paths
+# ---------
+
+compiler.mtb_lib_tools.path={runtime.tools.ModusToolbox.path}
+compiler.path={compiler.mtb_lib_tools.path}/gcc/bin/
+
+compiler.c.cmd=arm-none-eabi-gcc
+compiler.cpp.cmd=arm-none-eabi-g++
+compiler.ar.cmd=arm-none-eabi-ar
+compiler.size.cmd=arm-none-eabi-size
+compiler.c.elf.cmd=arm-none-eabi-gcc
+compiler.S.cmd=arm-none-eabi-gcc
+compiler.objcopy.cmd=arm-none-eabi-objcopy
+compiler.elf2hex.cmd=arm-none-eabi-objcopy
+
+# Compiler definitions
+compiler.warning_flags=-w
+compiler.define=-DARDUINO=
+
+# Compiler include paths for include files
+compiler.arduino_core.path={runtime.platform.path}/cores/arduino/api
+compiler.arduino_core_dep.path={compiler.arduino_core.path}/deprecated
+compiler.arduino_core_dep_avr.path={compiler.arduino_core.path}/deprecated-avr-comp/avr
+compiler.arduino_core_api.path= "-I{compiler.arduino_core_dep_avr.path}" "-I{compiler.arduino_core_dep.path}"  "-I{compiler.arduino_core.path}" 
+
+
+# GCC related definitions
+# Some flags might not be required : -mtune={build.mcu}
+compiler.c.flags= -c -g -Os {compiler.warning_flags} -std=gnu11  -nostdlib --param max-inline-insns-single=500 -MMD
+compiler.c.extra_flags=
+compiler.libraries.ldflags=
+
+# linker options
+compiler.c.elf.flags=-Os -Wl,-Map,{build.path}/{build.project_name}.map
+compiler.cpp.elf.flags={compiler.c.elf.flags}
+compiler.c.elf.extra_flags=
+
+# G++ related definitions
+# Some flags might not be required : -mtune={build.mcu}
+compiler.cpp.flags= -fpermissive -c -g -Os {compiler.warning_flags} -std=gnu++11 -fno-threadsafe-statics -nostdlib --param max-inline-insns-single=500 -fno-rtti -fno-exceptions -MMD
+compiler.cpp.extra_flags=
+
+# Assembler related definitions
+# Some flags might not be required : -mcpu={build.mcu} --> from MTB already
+compiler.S.flags= -mthumb -c -g -x assembler-with-cpp
+compiler.S.extra_flags=-w
+
+# Archives & binaries related definitions
+compiler.ar.flags=rcs
+compiler.ar.extra_flags=
+
+compiler.elf2hex.flags=-O ihex
+compiler.elf2hex.extra_flags=
+
+libmanager={compiler.mtb_lib_tools.path}/library-manager/library-manager-cli
+mtbshell={compiler.mtb_lib_tools.path}/modus-shell/bin/bash
+
+# Prebuild Hooks
+
+recipe.hooks.prebuild.1.pattern.windows=cmd /c if not exist "{build.flash_ld_path}" {libmanager}.exe --project {runtime.platform.path}/mtb-libs --add-bsp-name {build.variant} --add-bsp-version {build.board.version}
+recipe.hooks.prebuild.2.pattern.windows=cmd /c if not exist "{build.lib_path}" {mtbshell}.exe -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}"
+recipe.hooks.prebuild.4.pattern.windows={mtbshell} -i -l -c "cd '{runtime.platform.path}/mtb-libs' && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}"
+
+recipe.hooks.prebuild.1.pattern.linux=/bin/sh -c 'if [ ! -f "{build.flash_ld_path}" ]; then {libmanager} --project "{runtime.platform.path}/mtb-libs" --add-bsp-name {build.variant} --add-bsp-version {build.board.version}; fi'
+recipe.hooks.prebuild.2.pattern.linux=/bin/sh -c 'if [ ! -f "{build.lib_path}" ]; then cd {runtime.platform.path}/mtb-libs && make getlibs BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}; fi'
+recipe.hooks.prebuild.4.pattern.linux=/bin/sh -c 'cd {runtime.platform.path}/mtb-libs && make build BOARD={build.variant} CY_TOOLS_PATHS={compiler.mtb_lib_tools.path}'
+
+# Prebuild Hook to Fetch Compiler and Linker Flags from mtb-libs build
+
+recipe.hooks.prebuild.5.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ccxxflags {build.mtb_libs_board_build_path}/.cycompiler {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.6.pattern=python {runtime.platform.path}/tools/mtb_build_info.py ldflags {build.mtb_libs_board_build_path}/.cylinker {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
+recipe.hooks.prebuild.7.pattern=python {runtime.platform.path}/tools/mtb_build_info.py inc_dirs {build.mtb_libs_board_build_path}/inclist.rsp {runtime.platform.path}/mtb-libs {build.mtb_libs_board_build_path}
+compiler.flags.from_file=@{build.mtb_libs_board_build_path}/compiler_flags.txt
+compiler.elf_flags.from_file=@{build.mtb_libs_board_build_path}/linker_flags.txt
+compiler.inc_dirs.from_file=@{build.mtb_libs_board_build_path}/inc_dirs.txt
+
+
+# Includes
+includes=-I{build.path}/cores/psoc 
+
+# Build commands
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {compiler.inc_dirs.from_file} {includes} "{source_file}" -o "{object_file}"
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {compiler.inc_dirs.from_file} {includes} "{source_file}" -o "{object_file}"
+recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} "{compiler.flags.from_file}" {compiler.arduino_core_api.path} {compiler.inc_dirs.from_file} {includes} "{source_file}" -o "{object_file}"
+
+## Create archives
+# ----------------
+# Archive_file_path is needed for backwards compatibility with IDE 1.6.5 or older, IDE 1.6.6 or newer overrides this value
+archive_file_path={build.path}/{archive_file}
+recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {compiler.ar.extra_flags} "{archive_file_path}" "{object_file}"
+
+# mtb library paths
+compiler.mtb_lib.path = "{runtime.platform.path}/mtb-libs/build/APP_{build.variant}/Debug/mtb-libs.a"
+
+# Linker command
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.elf_flags.from_file} {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} {archive_file_path}   -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"  {compiler.mtb_lib.path}
+
+## Compute size
+# ----------------
+
+recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A --common "{build.path}/{build.project_name}.elf"
+recipe.size.regex=^(\.text|\.eh_frame)\s+([0-9]+).*
+# Recipe to show SRAM size used
+recipe.size.regex.data=^(?:\.data|\.VENEER_Code|\.ram_code|\.bss|\.no_init|\Stack)\s+([0-9]+).*
+
+# Create output files
+# -------------------
+
+## Create output (bin file)
+recipe.objcopy.bin.pattern="{compiler.path}{compiler.elf2hex.cmd}" {compiler.elf2hex.flags} {compiler.elf2hex.extra_flags}"{build.path}/{build.project_name}.elf" "{build.path}/{build.project_name}.hex"
+
+## Save hex
+recipe.output.tmp_file={build.project_name}.bin
+recipe.output.save_file={build.project_name}.{build.variant}.bin
+
+# Upload .hex file
+# ----------------
+
+tools.openocd.upload.params.verbose=-v
+tools.openocd.upload.params.quiet=
+tools.openocd.upload.params.args=upload {runtime.tools.ModusToolbox.path} {runtime.platform.path} {build.path} {build.variant} {upload.port.properties.serialNumber} {upload.target.cfg} {build.project_name} {upload.verbose}
+
+tools.openocd.upload.pattern.linux=bash {runtime.platform.path}/tools/upload.sh {upload.params.args}
+tools.openocd.upload.pattern.windows={runtime.platform.path}/tools/upload.bat {upload.params.args}
