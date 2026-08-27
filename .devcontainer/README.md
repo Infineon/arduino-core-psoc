@@ -2,7 +2,7 @@
 
 This repository uses the default dev container configuration in `devcontainer.json`.
 It runs as the non-root `vscode` user with the project workspace mounted at
-`/myLocalWorkingDir`, the host `/dev` tree bound into the container, and
+`/home/vscode/myLocalWorkingDir`, the host `/dev` tree bound into the container, and
 privileged mode enabled so board tools and USB access can work from inside the
 container. Dev Containers updates the `vscode` UID/GID to match the local
 workspace owner, which keeps bind-mounted file ownership aligned with the host.
@@ -59,7 +59,7 @@ The `devcontainer.json` file contains the following configuration options:
 |--------|-------|---------|
 | **name** | `PSOC6 Arduino Core (makers-docker)` | Display name shown in VS Code |
 | **dockerFile** | `../extras/makers-docker/Dockerfile.test` | Path to the Dockerfile in the makers-docker submodule used to build the container image |
-| **workspaceFolder** | `/myLocalWorkingDir` | Mount point for the repository inside the container |
+| **workspaceFolder** | `/home/vscode/myLocalWorkingDir` | Mount point for the repository inside the container |
 | **workspaceMount** | Bind source with `consistency=cached` | Mounts the host workspace into the container with optimized performance on macOS/WSL |
 | **remoteUser** | `vscode` | User that VS Code connects as when attached to the container |
 | **updateRemoteUserUID** | `true` | Automatically updates the `vscode` user's UID/GID to match the host user, ensuring file permissions are aligned |

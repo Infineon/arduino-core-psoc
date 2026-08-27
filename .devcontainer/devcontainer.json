@@ -1,8 +1,8 @@
 {
   "name": "PSOC6 Arduino Core (makers-docker)",
   "dockerFile": "../extras/makers-docker/Dockerfile.test",
-  "workspaceFolder": "/myLocalWorkingDir",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/myLocalWorkingDir,type=bind,consistency=cached",
+  "workspaceFolder": "/home/vscode/myLocalWorkingDir",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/vscode/myLocalWorkingDir,type=bind,consistency=cached",
   "containerUser": "vscode",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true,
