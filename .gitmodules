@@ -91,4 +91,7 @@
 [submodule "extras/mtb-libs/recipe-make-cat1a"]
 	path = extras/mtb-libs/recipe-make-cat1a
 	url = https://github.com/Infineon/recipe-make-cat1a.git
+[submodule "extras/makers-docker"]
+	path = extras/makers-docker
+	url = https://github.com/Infineon/makers-docker.git
 	

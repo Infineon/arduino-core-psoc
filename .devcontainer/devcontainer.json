@@ -1,0 +1,37 @@
+{
+  "name": "PSOC6 Arduino Core (makers-docker)",
+  "dockerFile": "../extras/makers-docker/Dockerfile.test",
+  "workspaceFolder": "/home/vscode/myLocalWorkingDir",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/vscode/myLocalWorkingDir,type=bind,consistency=cached",
+  "containerUser": "vscode",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "vscode"
+    }
+  },
+  "privileged": true,
+  "containerEnv": {
+    "ARDUINO_DIRECTORIES_DATA": "/opt/.arduino15"
+  },
+  "mounts": [
+    "source=/dev,target=/dev,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+  ],
+  "runArgs": [
+    "--init"
+  ],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff"
+      ]
+    }
+  }
+}
