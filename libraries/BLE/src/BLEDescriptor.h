@@ -20,7 +20,8 @@ class BLEDescriptor {
 
 public:
 
-    /* uuid: a 16-bit UUID string (e.g. "2902") or a 128-bit UUID string.
+    /* uuid: a 16-bit or 128-bit UUID string (e.g.
+     * "19b10000-e8f2-537e-4f6c-d104768a1214").
      * value/valueLength: the descriptor's initial value, copied into an
      * internally-owned buffer (up to valueLength bytes). */
     BLEDescriptor(const char *uuid, const uint8_t * value, int valueLength);

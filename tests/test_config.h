@@ -47,8 +47,10 @@
 #define         TEST_ADC_MAX_VALUE              2048    // 11-bit resolution
 #endif
 
+#if defined(ARDUINO_ARCH_PSOC6)
 // Forward declarations for SPI instances
 extern SPIClassPSOC SPI1;
+#endif // ARDUINO_ARCH_PSOC6
 
 // Test PWM Frequencies
 static const float test_pwm_frequencies[] = {1, 50, 5000, 50000};

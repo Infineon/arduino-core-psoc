@@ -21,8 +21,8 @@ public:
     /* Maximum number of characteristics a single service can hold. */
     static const int MAX_CHARACTERISTICS = 8;
 
-    /* uuid: a 16-bit UUID string (e.g. "180D") or a 128-bit UUID string
-     * (e.g. "19b10000-e8f2-537e-4f6c-d104768a1214"). */
+    /* uuid: a 16-bit or 128-bit UUID string (e.g.
+     * "19b10000-e8f2-537e-4f6c-d104768a1214"). */
     explicit BLEService(const char *uuid);
 
     BLEService(const BLEService &) = delete;

@@ -210,8 +210,8 @@ namespace ble_internal {
             gatt_db_write_bytes(buf, idx, uuid, uuid_len);
         }
 
-/* Appends a CHARACTERISTIC_UUID16_WRITABLE/128_WRITABLE declaration +
- * value attribute pair. The value attribute's own bytes are an unused
+/* Appends a CHARACTERISTIC_UUID16/128 or _WRITABLE declaration + value
+ * attribute pair. The value attribute's own bytes are an unused
  * placeholder (as in the vendor macros): this library always serves reads/
  * writes for its own characteristics via GATT_ATTRIBUTE_REQUEST_EVT (see
  * BLEAdapter::on_gatt_attribute_request()), looking the current value up
@@ -234,9 +234,17 @@ namespace ble_internal {
             gatt_db_write_u16(buf, idx, value_handle);
             gatt_db_write_u8(buf, idx, value_permission);
             gatt_db_write_u8(buf, idx, uuid_len);
-            if (uuid_len == GATTDB_UUID128_SIZE) {
-                /* The 128-bit vendor macro includes a reserved byte in the
-                 * value record; the 16-bit form does not. */
+            /* Per the vendor SDK macros (wiced_bt_gatt.h): the value record's
+             * reserved 0 byte is present in the *_WRITABLE variant of
+             * CHARACTERISTIC_UUID16/128, for both UUID sizes, and absent
+             * from the plain (read-only) variant, for both UUID sizes - it
+             * is selected by write permission, not by UUID length. Using
+             * UUID length here (as this code previously did) silently
+             * truncates/misaligns every subsequent attribute in the
+             * database once a writable 16-bit characteristic or a
+             * read-only 128-bit characteristic is registered (see
+             * issues/010-multi-attribute-discovery-bug.md). */
+            if (permission & (GATTDB_PERM_WRITE_REQ | GATTDB_PERM_WRITE_CMD)) {
                 gatt_db_write_u8(buf, idx, 0);
             }
             gatt_db_write_bytes(buf, idx, uuid, uuid_len);
@@ -314,11 +322,28 @@ namespace ble_internal {
  *
  * Hardware testing showed this settle window is not perfectly bounded -
  * even a generous delay here does not guarantee success on every run, and
- * occasional connection-level failures remain (tracked separately as
- * intermittent hardware flakiness, not fixable at this layer). This delay
- * is a best-effort mitigation that meaningfully improves the success rate
- * without adding excessive latency to every connection. */
+ * occasional connection-level failures remain. Waiting longer (tested up
+ * to 6s) does not raise the success rate further, so instead of growing
+ * this delay, discover_attributes() below pairs it with a bounded
+ * reconnect-and-retry loop (see BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS): a
+ * fresh connection gets a fresh settle window and a fresh (non-wedged)
+ * GATT client context, which is what actually recovers from this race in
+ * practice. */
         constexpr TickType_t BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS = pdMS_TO_TICKS(1000);
+
+/* Bounds how many times discover_attributes() will transparently
+ * disconnect, reconnect and retry the initial GATT_DISCOVER_SERVICES_ALL
+ * request after it fails with a settle-window race (see
+ * BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS' comment). A failed first
+ * discovery on a connection has been hardware-observed to permanently
+ * wedge that connection's underlying GATT client context (every
+ * subsequent discover call on it synchronously fails), so retrying
+ * in place cannot work - only a fresh connection gets a fresh context.
+ * This is only attempted while acting as the local central (the side
+ * that initiated the connection and therefore can reconnect); if the
+ * peer is instead the one that connected to us, a single attempt is
+ * made and any failure is reported as-is. */
+        constexpr int BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS = 3;
 
 /* Minimal, hand-authored LE-only stack configuration (single peripheral/
  * central connection, no bonding/pairing - see PRD "Connection topology"
@@ -1306,20 +1331,71 @@ namespace ble_internal {
             return false;
         }
 
-        free_discovered_services();
+        /* Retained across reconnect attempts below: on_gatt_connection_status()
+         * clears/overwrites _peer_address and _is_local_central on any
+         * connection-status event (including a spurious mid-settle-delay
+         * disconnect - see BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS' comment), so
+         * both must be snapshotted before the retry loop below rather than
+         * re-read from the live (mutable) adapter state on each iteration. */
+        char peer_address[sizeof(_peer_address)];
+        strncpy(peer_address, _peer_address, sizeof(peer_address) - 1);
+        peer_address[sizeof(peer_address) - 1] = '\0';
+        bool is_local_central = _is_local_central;
 
-        /* See BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS' comment: wait out the
-         * peer's connection-establishment settle window once, up front,
-         * rather than after a failed first attempt (which has been
-         * hardware-observed to wedge the underlying stack's GATT client
-         * context for the rest of the connection). */
-        vTaskDelay(BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS);
+        bool services_discovered = false;
+        for (int attempt = 0; attempt < BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS; attempt++) {
+            free_discovered_services();
 
-        wiced_bt_gatt_discovery_param_t service_param = {};
-        service_param.s_handle = 1;
-        service_param.e_handle = 0xFFFF;
-        _discovery_current_service_index = -1;
-        if (!discover_blocking(GATT_DISCOVER_SERVICES_ALL, &service_param)) {
+            /* See BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS' comment: wait out
+             * the peer's connection-establishment settle window once, up
+             * front, rather than after a failed first attempt (which has
+             * been hardware-observed to wedge the underlying stack's GATT
+             * client context for the rest of the connection). */
+            vTaskDelay(BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS);
+
+            bool is_last_attempt = (attempt + 1 == BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS);
+
+            /* The connection may have silently dropped (and possibly
+             * already reconnected as a fresh, un-discovered connection)
+             * during the settle delay above; _connected/_conn_id must be
+             * rechecked here rather than trusting the check done once at
+             * function entry. */
+            if (!_connected) {
+                _last_error = BLE_ADAPTER_ERROR_NOT_CONNECTED;
+                if (is_last_attempt || !is_local_central) {
+                    break;
+                }
+                if (!connect(peer_address)) {
+                    return false;
+                }
+                continue;
+            }
+
+            wiced_bt_gatt_discovery_param_t service_param = {};
+            service_param.s_handle = 1;
+            service_param.e_handle = 0xFFFF;
+            _discovery_current_service_index = -1;
+            if (discover_blocking(GATT_DISCOVER_SERVICES_ALL, &service_param)) {
+                services_discovered = true;
+                break;
+            }
+
+            if (is_last_attempt || !is_local_central) {
+                break;
+            }
+
+            /* See BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS' comment: the failed
+             * discovery above has wedged this connection's GATT client
+             * context, so retry with a brand new connection instead. */
+            disconnect();
+            if (!connect(peer_address)) {
+                /* _last_error was already set by connect() above. */
+                return false;
+            }
+        }
+
+        if (!services_discovered) {
+            /* _last_error was already set by discover_blocking() above. */
             return false;
         }
 

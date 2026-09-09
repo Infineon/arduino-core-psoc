@@ -32,8 +32,8 @@ class BLECharacteristic {
 
 public:
 
-    /* uuid: a 16-bit UUID string (e.g. "2A37") or a 128-bit UUID string
-     * (e.g. "19b10000-e8f2-537e-4f6c-d104768a1214"). valueSize bounds the
+    /* uuid: a 16-bit or 128-bit UUID string (e.g.
+     * "19b10000-e8f2-537e-4f6c-d104768a1214"). valueSize bounds the
      * characteristic's value buffer in bytes (default matches ArduinoBLE's
      * common default of 20 bytes, the default ATT MTU payload). */
     BLECharacteristic(const char *uuid, uint8_t properties, int valueSize = 20);
