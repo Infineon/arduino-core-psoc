@@ -343,6 +343,13 @@ namespace ble_internal {
          * send failure, timeout, or non-success discovery status. */
         bool discover_blocking(uint8_t type, void *p_param);
 
+        /* Runs the full services -> characteristics -> descriptors
+         * discovery sequence once on the current connection, without any
+         * reconnect/retry (that's handled by discover_attributes(), which
+         * calls this). Returns false (with _last_error set) if any step
+         * fails. */
+        bool discover_all_attributes_once();
+
         /* Frees the BLEService/BLECharacteristic objects allocated by a
          * previous discover_attributes() call (if any) and resets the
          * discovered-service table. Called at the start of
@@ -483,7 +490,7 @@ namespace ble_internal {
          * on_gatt_operation_complete() when the corresponding client
          * operation finishes. */
         SemaphoreHandle_t _gatt_op_sem;
-        uint8_t _gatt_op_status; /* wiced_bt_gatt_status_t, cached by on_gatt_operation_complete() */
+        uint16_t _gatt_op_status; /* wiced_bt_gatt_status_t, cached by on_gatt_operation_complete() */
         uint16_t _gatt_op_result_len; /* Response length, valid for read_remote_characteristic() */
     };
 

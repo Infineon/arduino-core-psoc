@@ -1,7 +1,14 @@
 #include "BLECharacteristic.h"
+#include "BLE.h"
 #include "internal/ble_adapter.h"
 
 #include <string.h>
+
+/* The PSOC6 device headers may define BLE as the BLESS peripheral register
+ * macro; undo that collision before using the public BLE singleton. */
+#ifdef BLE
+#undef BLE
+#endif
 
 BLECharacteristic::BLECharacteristic(const char *uuid, uint8_t properties, int valueSize)
     : _properties(properties),
@@ -55,7 +62,9 @@ int BLECharacteristic::readValue(uint8_t *buffer, int length) const {
 
     if (_remote) {
         int bytesRead = 0;
-        if (!ble_internal::BLEAdapter::instance().read_remote_characteristic(_valueHandleField, buffer, length, bytesRead)) {
+        if (!BLE._reportConnectionResult(
+            ble_internal::BLEAdapter::instance().read_remote_characteristic(
+                _valueHandleField, buffer, length, bytesRead))) {
             return 0;
         }
         return bytesRead;
@@ -72,7 +81,9 @@ bool BLECharacteristic::writeValue(const uint8_t *value, int length) {
     }
 
     if (_remote) {
-        if (!ble_internal::BLEAdapter::instance().write_remote_characteristic(_valueHandleField, value, length)) {
+        if (!BLE._reportConnectionResult(
+            ble_internal::BLEAdapter::instance().write_remote_characteristic(
+                _valueHandleField, value, length))) {
             return false;
         }
     }
@@ -109,7 +120,9 @@ bool BLECharacteristic::subscribe() {
      * only declared BLEIndicate). */
     uint16_t cccd_value = (_properties & BLENotify) ? 0x0001 : 0x0002;
     uint8_t buffer[2] = { (uint8_t)(cccd_value & 0xFF), (uint8_t)((cccd_value >> 8) & 0xFF) };
-    return ble_internal::BLEAdapter::instance().write_remote_characteristic(_cccdHandleField, buffer, sizeof(buffer));
+    return BLE._reportConnectionResult(
+        ble_internal::BLEAdapter::instance().write_remote_characteristic(
+            _cccdHandleField, buffer, sizeof(buffer)));
 }
 
 bool BLECharacteristic::unsubscribe() {
@@ -118,7 +131,9 @@ bool BLECharacteristic::unsubscribe() {
     }
 
     uint8_t buffer[2] = { 0x00, 0x00 };
-    return ble_internal::BLEAdapter::instance().write_remote_characteristic(_cccdHandleField, buffer, sizeof(buffer));
+    return BLE._reportConnectionResult(
+        ble_internal::BLEAdapter::instance().write_remote_characteristic(
+            _cccdHandleField, buffer, sizeof(buffer)));
 }
 
 bool BLECharacteristic::valueUpdated() {

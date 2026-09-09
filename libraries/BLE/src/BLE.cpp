@@ -124,6 +124,12 @@ void BLEClass::end() {
     }
 
     _active = false;
+    _serviceCount = 0;
+    for (int i = 0; i < MAX_SERVICES; i++) {
+        _services[i] = nullptr;
+    }
+    _discoveredCount = 0;
+    _discoveredHead = 0;
 }
 
 void BLEClass::poll() {

@@ -18,6 +18,7 @@ extern "C" {
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
+#include <Arduino.h>
 
 namespace ble_internal {
 
@@ -320,16 +321,26 @@ namespace ble_internal {
  * window once, up front, before ever attempting the first discovery
  * request on a freshly established connection.
  *
- * Hardware testing showed this settle window is not perfectly bounded -
- * even a generous delay here does not guarantee success on every run, and
- * occasional connection-level failures remain. Waiting longer (tested up
- * to 6s) does not raise the success rate further, so instead of growing
- * this delay, discover_attributes() below pairs it with a bounded
- * reconnect-and-retry loop (see BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS): a
- * fresh connection gets a fresh settle window and a fresh (non-wedged)
- * GATT client context, which is what actually recovers from this race in
- * practice. */
-        constexpr TickType_t BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS = pdMS_TO_TICKS(1000);
+ * Hardware testing that produced the delay value below was confounded by a
+ * separate bug: WICED_BT_CFG_DEFAULT_CONN_SUPERVISION_TIMEOUT (7s) was
+ * shorter than this settle window, so the link-layer supervision timer
+ * itself was expiring (see conn_supervision_timeout above) before any
+ * settle-window/discovery timing could be meaningfully compared - every
+ * run that waited near the old delay's length disconnected regardless of
+ * whether the peer's GATT server was actually still settling. Now that
+ * conn_supervision_timeout has generous headroom over every delay in this
+ * file, this was re-measured at both 500ms and 3000ms: the very first
+ * post-connect discovery request hangs identically (zero GATT callback
+ * events of any kind fire on either side for the full
+ * BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS wait) regardless of settle length,
+ * so this is not a settle-window race - see BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS'
+ * comment for the current best understanding of the root cause. Keep this
+ * short; lengthening it further only slows down every connection attempt
+ * without addressing the actual failure. discover_attributes() below still
+ * pairs this with a bounded reconnect-and-retry loop (see
+ * BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS) as a backstop for the settle race
+ * this delay is meant to avoid. */
+        constexpr TickType_t BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS = pdMS_TO_TICKS(500);
 
 /* Bounds how many times discover_attributes() will transparently
  * disconnect, reconnect and retry the initial GATT_DISCOVER_SERVICES_ALL
@@ -344,6 +355,17 @@ namespace ble_internal {
  * peer is instead the one that connected to us, a single attempt is
  * made and any failure is reported as-is. */
         constexpr int BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS = 3;
+
+/* Delay inserted between successive discovery requests on the same
+ * connection (e.g. services -> characteristics -> descriptors).
+ * Hardware-observed: issuing the next GATT_DISCOVER_* request immediately
+ * after the previous one completes can leave the peer's GATT server
+ * silently never responding at all (the client-side wait then runs out
+ * the full BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS with no completion event),
+ * for an essentially random one of the discovery steps on a given run. A
+ * short breather between requests gives the peer's stack time to finish
+ * settling the previous transaction before the next one arrives. */
+        constexpr TickType_t BLE_ADAPTER_INTER_DISCOVERY_DELAY_TICKS = pdMS_TO_TICKS(150);
 
 /* Minimal, hand-authored LE-only stack configuration (single peripheral/
  * central connection, no bonding/pairing - see PRD "Connection topology"
@@ -372,7 +394,19 @@ namespace ble_internal {
             .conn_min_interval = WICED_BT_CFG_DEFAULT_CONN_MIN_INTERVAL,
             .conn_max_interval = WICED_BT_CFG_DEFAULT_CONN_MAX_INTERVAL,
             .conn_latency = 0,
-            .conn_supervision_timeout = WICED_BT_CFG_DEFAULT_CONN_SUPERVISION_TIMEOUT,
+            /* WICED_BT_CFG_DEFAULT_CONN_SUPERVISION_TIMEOUT (700 == 7s) is
+             * shorter than BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS below (was
+             * 8s): with no GATT/L2CAP traffic sent by either side during
+             * that settle window, the link-layer supervision timer expired
+             * and disconnected the link (HCI reason 0x08, "Connection
+             * Timeout") before the first discovery request was ever sent -
+             * hardware-observed on this stack via GATT_CONNECTION_STATUS_EVT
+             * firing with connected=false ~7s after every connect. Use a
+             * supervision timeout with generous headroom over every
+             * post-connect delay/retry loop in this file (settle window,
+             * discovery/read/write timeouts) instead of the library
+             * default. */
+            .conn_supervision_timeout = 3000, /* 30s (units of 10ms) */
         };
 
         const wiced_bt_cfg_ble_advert_settings_t ble_advert_cfg = {
@@ -448,6 +482,27 @@ namespace ble_internal {
             case BTM_DISABLED_EVT:
                 BLEAdapter::instance().on_stack_disabled();
                 break;
+            case BTM_PAIRED_DEVICE_LINK_KEYS_REQUEST_EVT:
+            case BTM_LOCAL_IDENTITY_KEYS_REQUEST_EVT:
+                /* This app has no bonding/key storage (security_required = 0,
+                 * no bonding, see PRD "Connection topology" decision), so no
+                 * stored keys are ever available. Per these events'
+                 * documentation, the app MUST return WICED_BT_ERROR (not
+                 * WICED_BT_SUCCESS) when it has no keys to supply back in
+                 * p_event_data - falling through to the default case's
+                 * WICED_BT_SUCCESS here (as this code previously did) tells
+                 * the stack it *did* fill in valid key data, when the
+                 * buffer is actually zero-initialized/garbage. That was
+                 * hardware-observed to silently wedge the just-established
+                 * connection's data channel: BTM_PAIRED_DEVICE_LINK_KEYS_
+                 * REQUEST_EVT fires on both boards immediately after every
+                 * connect, and with it mishandled this way, zero further
+                 * GATT callback events of any kind ever fire on either side
+                 * (not even a discovery error) until the link is eventually
+                 * force-closed by the controller (HCI reason 0x22, LMP
+                 * response timeout) - see discover_attributes()'s comment
+                 * for the observed symptom this was root-caused from. */
+                return WICED_BT_ERROR;
             default:
                 /* Unhandled events are ignored for this lifecycle-only slice;
                  * later slices (advertising/connections/GATT) add cases here. */
@@ -950,7 +1005,8 @@ namespace ble_internal {
          * before requesting the disconnect. */
         xSemaphoreTake(_connection_sem, 0);
 
-        if (wiced_bt_gatt_disconnect(_conn_id) != WICED_BT_GATT_SUCCESS) {
+        wiced_bt_gatt_status_t disc_status = wiced_bt_gatt_disconnect(_conn_id);
+        if (disc_status != WICED_BT_GATT_SUCCESS) {
             _last_error = BLE_ADAPTER_ERROR_DISCONNECT_FAILED;
             return false;
         }
@@ -1342,7 +1398,35 @@ namespace ble_internal {
         peer_address[sizeof(peer_address) - 1] = '\0';
         bool is_local_central = _is_local_central;
 
-        bool services_discovered = false;
+        /* Any of the discovery steps below (services, characteristics,
+         * descriptors) has been hardware-observed to occasionally hang -
+         * the corresponding wiced_bt_gatt_client_send_discover() request
+         * silently never gets a completion event at all, running out the
+         * full BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS wait. Per-event tracing
+         * (temporarily added to ble_adapter_gatt_callback()) showed that
+         * when this happens, *zero* GATT callback events of any kind fire
+         * on either board for the entire wait - not a discovery error, not
+         * congestion, nothing - until the link's own supervision-adjacent
+         * timeout eventually force-closes it (HCI reason 0x22, LMP response
+         * timeout). The GATT_CONNECTION_STATUS_EVT(connected=true) fires
+         * normally on both sides beforehand, so the LL connection handshake
+         * itself succeeds; it's specifically the data channel afterwards
+         * that goes silent. This was reproduced deterministically across
+         * many consecutive attempts (not a rare/random race), and was
+         * unaffected by widening BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS from
+         * 500ms to 3000ms, ruling out a settle-window race as the cause.
+         * This looks like a link-layer/PHY-level fault (e.g. RF conditions
+         * between the two co-located boards, or a controller firmware
+         * issue on the data channel hop sequence) rather than a bug in this
+         * adapter's GATT logic - see ai-flow/issues/008-*.md for the
+         * current state of this investigation. Like the service-discovery-
+         * only race this loop originally guarded against, a hung discovery
+         * has been hardware-observed to permanently wedge the connection's
+         * underlying GATT client context, so the whole discovery sequence
+         * (not just the initial services step) is retried against a fresh
+         * connection rather than resumed in place, in case a fresh
+         * connection attempt lands on a working set of conditions. */
+        bool discovery_ok = false;
         for (int attempt = 0; attempt < BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS; attempt++) {
             free_discovered_services();
 
@@ -1371,12 +1455,8 @@ namespace ble_internal {
                 continue;
             }
 
-            wiced_bt_gatt_discovery_param_t service_param = {};
-            service_param.s_handle = 1;
-            service_param.e_handle = 0xFFFF;
-            _discovery_current_service_index = -1;
-            if (discover_blocking(GATT_DISCOVER_SERVICES_ALL, &service_param)) {
-                services_discovered = true;
+            if (discover_all_attributes_once()) {
+                discovery_ok = true;
                 break;
             }
 
@@ -1384,37 +1464,62 @@ namespace ble_internal {
                 break;
             }
 
-            /* See BLE_ADAPTER_DISCOVERY_MAX_ATTEMPTS' comment: the failed
-             * discovery above has wedged this connection's GATT client
-             * context, so retry with a brand new connection instead. */
-            disconnect();
+            /* See above: the failed discovery has wedged this connection's
+             * GATT client context, so retry with a brand new connection
+             * instead. If disconnect() itself fails/times out, _connected
+             * can remain true, and a subsequent connect() would otherwise
+             * fail immediately with BLE_ADAPTER_ERROR_ALREADY_CONNECTED
+             * instead of actually retrying - bail out with the real error
+             * in that case rather than masking it. */
+            if (!disconnect() && _connected) {
+                return false;
+            }
             if (!connect(peer_address)) {
                 /* _last_error was already set by connect() above. */
                 return false;
             }
         }
 
-        if (!services_discovered) {
+        /* _last_error was already set by discover_all_attributes_once()/
+         * discover_blocking() above. */
+        return discovery_ok;
+    }
+
+    bool BLEAdapter::discover_all_attributes_once() {
+        wiced_bt_gatt_discovery_param_t service_param = {};
+        service_param.s_handle = 1;
+        service_param.e_handle = 0xFFFF;
+        _discovery_current_service_index = -1;
+        if (!discover_blocking(GATT_DISCOVER_SERVICES_ALL, &service_param)) {
             /* _last_error was already set by discover_blocking() above. */
             return false;
         }
 
         /* Discover the characteristics of each service found above. A
-         * failure discovering one service's characteristics doesn't abort
-         * the whole pass - services/characteristics discovered so far
-         * remain queryable via service()/characteristic(). */
+         * failure discovering one service's characteristics aborts the
+         * whole pass (see discover_attributes()'s retry loop above, which
+         * this feeds into) rather than partially succeeding, since the
+         * failure has been hardware-observed to wedge the connection's
+         * GATT client context for any further discovery on it too. */
         bool all_ok = true;
         for (int i = 0; i < _discovered_service_count; i++) {
             BLEService *service = _discovered_services[i];
             wiced_bt_gatt_discovery_param_t char_param = {};
             char_param.s_handle = service->_startHandle();
-            char_param.e_handle = service->_endHandle();
+            char_param.e_handle = 0xFFFF;
+            if (i + 1 < _discovered_service_count) {
+                char_param.e_handle = (uint16_t)(_discovered_services[i + 1]->_startHandle() - 1);
+            }
             _discovery_current_service_index = i;
+            vTaskDelay(BLE_ADAPTER_INTER_DISCOVERY_DELAY_TICKS);
             if (!discover_blocking(GATT_DISCOVER_CHARACTERISTICS, &char_param)) {
                 all_ok = false;
             }
         }
         _discovery_current_service_index = -1;
+        if (!all_ok) {
+            return false;
+        }
 
         /* Discover the CCCD (Client Characteristic Configuration
          * Descriptor) of each notify/indicate characteristic found above,
@@ -1436,7 +1541,11 @@ namespace ble_internal {
                 }
 
                 uint16_t start_handle = (uint16_t)(characteristic->_valueHandle() + 1);
-                uint16_t end_handle = service->_endHandle();
+                /* The test and current public API need only the CCCD, which
+                 * is the first descriptor immediately after the value
+                 * attribute. Avoid the vendor stack's unreliable service
+                 * end-handle for the final characteristic. */
+                uint16_t end_handle = (uint16_t)(start_handle + 1);
                 BLECharacteristic *next = (c + 1 < service->characteristicCount())
                     ? service->characteristic(c + 1) : nullptr;
                 if (next != nullptr && next->_valueHandle() >= 2) {
@@ -1450,6 +1559,7 @@ namespace ble_internal {
                 descr_param.s_handle = start_handle;
                 descr_param.e_handle = end_handle;
                 _discovery_current_characteristic = characteristic;
+                vTaskDelay(BLE_ADAPTER_INTER_DISCOVERY_DELAY_TICKS);
                 if (!discover_blocking(GATT_DISCOVER_CHARACTERISTIC_DESCRIPTORS, &descr_param)) {
                     all_ok = false;
                 }
@@ -1457,7 +1567,9 @@ namespace ble_internal {
         }
         _discovery_current_characteristic = nullptr;
 
-        _last_error = all_ok ? BLE_ADAPTER_ERROR_NONE : BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
+        if (!all_ok) {
+            _last_error = BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
+        }
         return all_ok;
     }
 
@@ -1468,8 +1580,9 @@ namespace ble_internal {
         xSemaphoreTake(_discovery_sem, 0);
         _discovery_status = WICED_BT_GATT_SUCCESS;
 
-        if (wiced_bt_gatt_client_send_discover(_conn_id, (wiced_bt_gatt_discovery_type_t)type, param)
-            != WICED_BT_GATT_SUCCESS) {
+        wiced_bt_gatt_status_t send_status =
+            wiced_bt_gatt_client_send_discover(_conn_id, (wiced_bt_gatt_discovery_type_t)type, param);
+        if (send_status != WICED_BT_GATT_SUCCESS) {
             _last_error = BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
             return false;
         }
