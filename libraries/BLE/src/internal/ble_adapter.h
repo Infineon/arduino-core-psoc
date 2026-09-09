@@ -48,7 +48,19 @@ namespace ble_internal {
         BLE_ADAPTER_ERROR_STACK_DEINIT_TIMEOUT,
         BLE_ADAPTER_ERROR_QUEUE_CREATE_FAILED,
         BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED,
+        BLE_ADAPTER_ERROR_INVALID_UUID,
+        BLE_ADAPTER_ERROR_ADVERTISE_DATA_FAILED,
+        BLE_ADAPTER_ERROR_ADVERTISE_START_FAILED,
     } ble_adapter_error_t;
+
+/* Parameters for start_advertising(). local_name/service_uuid may be
+ * nullptr or empty to omit that field from the advertising payload.
+ * service_uuid accepts a 16-bit UUID string (e.g. "180D") or a 128-bit
+ * UUID string (e.g. "19b10000-e8f2-537e-4f6c-d104768a1214"). */
+    typedef struct {
+        const char *local_name;
+        const char *service_uuid;
+    } ble_adapter_advert_params_t;
 
 /* Events queued by btstack callbacks (bt_task context) for later draining
  * by BLE.poll() (sketch task context). Kept intentionally minimal for the
@@ -83,6 +95,17 @@ namespace ble_internal {
          * if the queue is empty or the adapter was never initialized. Meant to
          * be called repeatedly from BLE.poll() until it returns false. */
         bool pop_event(ble_adapter_event_t &event);
+
+        /* Builds a raw LE advertising payload (flags + optional local name +
+         * optional advertised service UUID) from 'params' and starts
+         * undirected connectable advertising. Returns false (see
+         * last_error()) if the adapter isn't initialized, a UUID string
+         * couldn't be parsed, or the underlying btstack calls fail. */
+        bool start_advertising(const ble_adapter_advert_params_t &params);
+
+        /* Stops any advertising started by start_advertising(). Safe to call
+         * even if advertising was never started. */
+        bool stop_advertising();
 
         bool is_initialized() const {
             return _initialized;

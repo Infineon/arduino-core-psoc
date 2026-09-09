@@ -10,13 +10,93 @@ extern "C" {
 #include "cybt_platform_config.h"
 #include "cybsp_bt_config.h"
 #include "wiced_bt_stack.h"
+#include "wiced_bt_ble.h"
 }
 
 #include <string.h>
+#include <stdlib.h>
 
 namespace ble_internal {
 
     namespace {
+
+/* Maximum raw advertising elements this adapter builds: flags + local name +
+ * one advertised service UUID. */
+        constexpr uint8_t BLE_ADAPTER_MAX_ADVERT_ELEMENTS = 3;
+
+/* Parses a hex nibble; returns -1 for non-hex characters. */
+        int hex_nibble(char c) {
+            if (c >= '0' && c <= '9') {
+                return c - '0';
+            }
+            if (c >= 'a' && c <= 'f') {
+                return 10 + (c - 'a');
+            }
+            if (c >= 'A' && c <= 'F') {
+                return 10 + (c - 'A');
+            }
+            return -1;
+        }
+
+/* Parses a UUID string into its little-endian over-the-air byte
+ * representation. Accepts a 16-bit UUID ("180D") or a dashed 128-bit UUID
+ * ("19b10000-e8f2-537e-4f6c-d104768a1214"). On success, fills 'out' (which
+ * must be at least 16 bytes) and sets 'out_len' to 2 or 16. Returns false on
+ * a malformed UUID string. */
+        bool parse_uuid(const char *uuid, uint8_t *out, uint8_t &out_len) {
+            if (uuid == nullptr) {
+                return false;
+            }
+
+            /* Collect hex nibbles, skipping dashes, in the order they appear
+             * in the (big-endian, human-readable) string. */
+            uint8_t big_endian_bytes[16];
+            int byte_count = 0;
+            int nibble_high = -1;
+
+            for (const char *p = uuid; *p != '\0'; p++) {
+                if (*p == '-') {
+                    continue;
+                }
+                int nibble = hex_nibble(*p);
+                if (nibble < 0) {
+                    return false;
+                }
+                if (nibble_high < 0) {
+                    nibble_high = nibble;
+                } else {
+                    if (byte_count >= 16) {
+                        return false; /* Too long to be a 16-bit or 128-bit UUID. */
+                    }
+                    big_endian_bytes[byte_count++] = (uint8_t)((nibble_high << 4) | nibble);
+                    nibble_high = -1;
+                }
+            }
+
+            if (nibble_high >= 0) {
+                return false; /* Odd number of hex digits. */
+            }
+
+            if (byte_count == 2) {
+                /* 16-bit UUID: over-the-air order is little-endian. */
+                out[0] = big_endian_bytes[1];
+                out[1] = big_endian_bytes[0];
+                out_len = 2;
+                return true;
+            }
+
+            if (byte_count == 16) {
+                /* 128-bit UUID: over-the-air order is the reverse of the
+                 * textual (big-endian) representation. */
+                for (int i = 0; i < 16; i++) {
+                    out[i] = big_endian_bytes[15 - i];
+                }
+                out_len = 16;
+                return true;
+            }
+
+            return false;
+        }
 
 /* Bounds how long init()/deinit() block waiting for the corresponding
  * BTM_ENABLED_EVT/BTM_DISABLED_EVT to arrive from the bt_task. */
@@ -255,6 +335,78 @@ namespace ble_internal {
         if (_lifecycle_sem != nullptr) {
             xSemaphoreGive(_lifecycle_sem);
         }
+    }
+
+    bool BLEAdapter::start_advertising(const ble_adapter_advert_params_t &params) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        wiced_bt_ble_advert_elem_t elems[BLE_ADAPTER_MAX_ADVERT_ELEMENTS];
+        uint8_t elem_count = 0;
+
+        /* Flags: general discoverable, LE-only (no BR/EDR). */
+        static uint8_t flags = BTM_BLE_GENERAL_DISCOVERABLE_FLAG | BTM_BLE_BREDR_NOT_SUPPORTED;
+        elems[elem_count].advert_type = BTM_BLE_ADVERT_TYPE_FLAG;
+        elems[elem_count].len = sizeof(flags);
+        elems[elem_count].p_data = &flags;
+        elem_count++;
+
+        size_t name_len = 0;
+        if (params.local_name != nullptr) {
+            name_len = strlen(params.local_name);
+        }
+        if (name_len > 0) {
+            elems[elem_count].advert_type = BTM_BLE_ADVERT_TYPE_NAME_COMPLETE;
+            elems[elem_count].len = (uint16_t)name_len;
+            elems[elem_count].p_data = (uint8_t *)params.local_name;
+            elem_count++;
+        }
+
+        uint8_t service_uuid_bytes[16];
+        uint8_t service_uuid_len = 0;
+        bool have_service_uuid = params.service_uuid != nullptr && params.service_uuid[0] != '\0';
+        if (have_service_uuid) {
+            if (!parse_uuid(params.service_uuid, service_uuid_bytes, service_uuid_len)) {
+                _last_error = BLE_ADAPTER_ERROR_INVALID_UUID;
+                return false;
+            }
+            elems[elem_count].advert_type = (service_uuid_len == 16)
+                ? BTM_BLE_ADVERT_TYPE_128SRV_COMPLETE
+                : BTM_BLE_ADVERT_TYPE_16SRV_COMPLETE;
+            elems[elem_count].len = service_uuid_len;
+            elems[elem_count].p_data = service_uuid_bytes;
+            elem_count++;
+        }
+
+        if (wiced_bt_ble_set_raw_advertisement_data(elem_count, elems) != WICED_BT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_ADVERTISE_DATA_FAILED;
+            return false;
+        }
+
+        if (wiced_bt_start_advertisements(BTM_BLE_ADVERT_UNDIRECTED_HIGH, 0, nullptr) != WICED_BT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_ADVERTISE_START_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    bool BLEAdapter::stop_advertising() {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        if (wiced_bt_start_advertisements(BTM_BLE_ADVERT_OFF, 0, nullptr) != WICED_BT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_ADVERTISE_START_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
     }
 
     void BLEAdapter::on_stack_disabled() {

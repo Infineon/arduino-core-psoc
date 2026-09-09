@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "BLEService.h"
+#include "BLECharacteristic.h"
+
 /**
  * Public error codes for the BLE library. Methods that can fail return
  * bool (not exceptions); call BLE.lastError() to find out why the most
@@ -19,6 +22,9 @@ typedef enum {
     BLE_ERROR_DEINIT_TIMEOUT,
     BLE_ERROR_QUEUE_CREATE_FAILED,
     BLE_ERROR_SEMAPHORE_CREATE_FAILED,
+    BLE_ERROR_TOO_MANY_SERVICES,
+    BLE_ERROR_INVALID_UUID,
+    BLE_ERROR_ADVERTISE_FAILED,
     BLE_ERROR_UNKNOWN,
 } ble_error_t;
 
@@ -55,6 +61,22 @@ public:
      * context are safely handed off to application code. */
     void poll();
 
+    /* Registers a locally-hosted GATT service (with its characteristics)
+     * so it can be advertised/exposed once advertise() is called. The
+     * caller retains ownership of 'service'; it (and the characteristics
+     * added to it) must outlive this BLEClass instance. Returns false if
+     * the maximum number of services has already been added. */
+    bool addService(BLEService &service);
+
+    /* Starts undirected connectable advertising with the given local name
+     * and, optionally, an advertised service UUID (pass nullptr or "" to
+     * omit it). Returns false on failure; see lastError(). */
+    bool advertise(const char *localName, const char *serviceUuid = nullptr);
+
+    /* Stops advertising started by advertise(). Safe to call even if
+     * advertising was never started. */
+    void stopAdvertise();
+
     /* Returns the reason the most recent failing call failed. */
     ble_error_t lastError() const;
 
@@ -69,8 +91,12 @@ private:
     BLEClass(const BLEClass &) = delete;
     BLEClass & operator = (const BLEClass &) = delete;
 
+    static const int MAX_SERVICES = 4;
+
     bool _active = false;
     ble_error_t _last_error = BLE_ERROR_NONE;
+    BLEService *_services[MAX_SERVICES];
+    int _serviceCount = 0;
 };
 
 /* The PSOC6 PDL device headers (cyble_*_device.h, pulled in transitively via

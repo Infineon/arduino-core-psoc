@@ -30,6 +30,11 @@ namespace {
                 return BLE_ERROR_QUEUE_CREATE_FAILED;
             case ble_internal::BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED:
                 return BLE_ERROR_SEMAPHORE_CREATE_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_INVALID_UUID:
+                return BLE_ERROR_INVALID_UUID;
+            case ble_internal::BLE_ADAPTER_ERROR_ADVERTISE_DATA_FAILED:
+            case ble_internal::BLE_ADAPTER_ERROR_ADVERTISE_START_FAILED:
+                return BLE_ERROR_ADVERTISE_FAILED;
             default:
                 return BLE_ERROR_UNKNOWN;
         }
@@ -45,7 +50,10 @@ namespace {
 } // namespace
 
 BLEClass::BLEClass()
-    : _active(false), _last_error(BLE_ERROR_NONE) {
+    : _active(false), _last_error(BLE_ERROR_NONE), _serviceCount(0) {
+    for (int i = 0; i < MAX_SERVICES; i++) {
+        _services[i] = nullptr;
+    }
 }
 
 BLEClass::~BLEClass() {
@@ -98,6 +106,46 @@ void BLEClass::poll() {
 
 ble_error_t BLEClass::lastError() const {
     return _last_error;
+}
+
+bool BLEClass::addService(BLEService &service) {
+    if (_serviceCount >= MAX_SERVICES) {
+        _last_error = BLE_ERROR_TOO_MANY_SERVICES;
+        return false;
+    }
+
+    _services[_serviceCount++] = &service;
+    _last_error = BLE_ERROR_NONE;
+    return true;
+}
+
+bool BLEClass::advertise(const char *localName, const char *serviceUuid) {
+    if (!_active) {
+        _last_error = BLE_ERROR_NOT_INITIALIZED;
+        return false;
+    }
+
+    ble_internal::ble_adapter_advert_params_t params;
+    params.local_name = localName;
+    params.service_uuid = serviceUuid;
+
+    if (!BLEAdapter::instance().start_advertising(params)) {
+        _last_error = map_adapter_error(BLEAdapter::instance().last_error());
+        return false;
+    }
+
+    _last_error = BLE_ERROR_NONE;
+    return true;
+}
+
+void BLEClass::stopAdvertise() {
+    if (!_active) {
+        return;
+    }
+
+    if (!BLEAdapter::instance().stop_advertising()) {
+        _last_error = map_adapter_error(BLEAdapter::instance().last_error());
+    }
 }
 
 /* See BLE.h: the PSOC6 PDL device headers '#define BLE' as a register base
