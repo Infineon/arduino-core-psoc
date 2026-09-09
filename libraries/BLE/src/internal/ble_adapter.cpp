@@ -1,0 +1,269 @@
+/*
+ * Internal adapter implementation. This is the ONLY translation unit in the
+ * BLE library allowed to include btstack/btstack-integration headers and
+ * call wiced_bt_* / cybt_* APIs directly (see ble_adapter.h for rationale).
+ */
+
+#include "internal/ble_adapter.h"
+
+extern "C" {
+#include "cybt_platform_config.h"
+#include "cybsp_bt_config.h"
+#include "wiced_bt_stack.h"
+}
+
+#include <string.h>
+
+namespace ble_internal {
+
+    namespace {
+
+/* Bounds how long init()/deinit() block waiting for the corresponding
+ * BTM_ENABLED_EVT/BTM_DISABLED_EVT to arrive from the bt_task. */
+        constexpr TickType_t BLE_ADAPTER_LIFECYCLE_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
+        constexpr UBaseType_t BLE_ADAPTER_EVENT_QUEUE_LENGTH = 16;
+
+/* Minimal, hand-authored LE-only stack configuration (single peripheral/
+ * central connection, no bonding/pairing - see PRD "Connection topology"
+ * decision). Later slices may extend GATT/advertising specific fields but
+ * should not need to touch the lifecycle-critical fields below. */
+        const wiced_bt_cfg_ble_scan_settings_t ble_scan_cfg = {
+            .scan_mode = BTM_BLE_SCAN_MODE_PASSIVE,
+            .high_duty_scan_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_SCAN_INTERVAL,
+            .high_duty_scan_window = WICED_BT_CFG_DEFAULT_HIGH_DUTY_SCAN_WINDOW,
+            .high_duty_scan_duration = 5,
+            .low_duty_scan_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_SCAN_INTERVAL,
+            .low_duty_scan_window = WICED_BT_CFG_DEFAULT_LOW_DUTY_SCAN_WINDOW,
+            .low_duty_scan_duration = 0,
+            .high_duty_conn_scan_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_CONN_SCAN_INTERVAL,
+            .high_duty_conn_scan_window = WICED_BT_CFG_DEFAULT_HIGH_DUTY_CONN_SCAN_WINDOW,
+            .high_duty_conn_duration = 30,
+            .low_duty_conn_scan_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_CONN_SCAN_INTERVAL,
+            .low_duty_conn_scan_window = WICED_BT_CFG_DEFAULT_LOW_DUTY_CONN_SCAN_WINDOW,
+            .low_duty_conn_duration = 0,
+            .conn_min_interval = WICED_BT_CFG_DEFAULT_CONN_MIN_INTERVAL,
+            .conn_max_interval = WICED_BT_CFG_DEFAULT_CONN_MAX_INTERVAL,
+            .conn_latency = 0,
+            .conn_supervision_timeout = WICED_BT_CFG_DEFAULT_CONN_SUPERVISION_TIMEOUT,
+        };
+
+        const wiced_bt_cfg_ble_advert_settings_t ble_advert_cfg = {
+            .channel_map = (BTM_BLE_ADVERT_CHNL_37 | BTM_BLE_ADVERT_CHNL_38 | BTM_BLE_ADVERT_CHNL_39),
+            .high_duty_min_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_ADV_MIN_INTERVAL,
+            .high_duty_max_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_ADV_MAX_INTERVAL,
+            .high_duty_duration = 30,
+            .low_duty_min_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_ADV_MIN_INTERVAL,
+            .low_duty_max_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_ADV_MAX_INTERVAL,
+            .low_duty_duration = 0,
+            .high_duty_directed_min_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_ADV_MIN_INTERVAL,
+            .high_duty_directed_max_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_ADV_MAX_INTERVAL,
+            .low_duty_directed_min_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_ADV_MIN_INTERVAL,
+            .low_duty_directed_max_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_ADV_MAX_INTERVAL,
+            .low_duty_directed_duration = 0,
+            .high_duty_nonconn_min_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_ADV_MIN_INTERVAL,
+            .high_duty_nonconn_max_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_ADV_MAX_INTERVAL,
+            .high_duty_nonconn_duration = 0,
+            .low_duty_nonconn_min_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_ADV_MIN_INTERVAL,
+            .low_duty_nonconn_max_interval = WICED_BT_CFG_DEFAULT_LOW_DUTY_ADV_MAX_INTERVAL,
+            .low_duty_nonconn_duration = 0,
+        };
+
+        const wiced_bt_cfg_ble_t ble_cfg = {
+            .ble_max_simultaneous_links = 1, /* single active connection per role, see PRD */
+            .ble_max_rx_pdu_size = 251,
+            .appearance = APPEARANCE_GENERIC_TAG,
+            .rpa_refresh_timeout = 0,  /* LE privacy disabled */
+            .host_addr_resolution_db_size = 0,
+            .p_ble_scan_cfg = &ble_scan_cfg,
+            .p_ble_advert_cfg = &ble_advert_cfg,
+            .default_ble_power_level = 0,
+        };
+
+        const wiced_bt_cfg_gatt_t gatt_cfg = {
+            .max_db_service_modules = 0,
+            .max_eatt_bearers = 0,
+        };
+
+        const wiced_bt_cfg_br_t br_cfg = {}; /* BLE-only: BR/EDR configuration left at zero. */
+        const wiced_bt_cfg_isoc_t isoc_cfg = {};
+        const wiced_bt_cfg_l2cap_application_t l2cap_app_cfg = {};
+
+/* Device name buffer backing wiced_bt_cfg_settings_t.device_name (must
+ * outlive the call to wiced_bt_stack_init). */
+        uint8_t g_device_name[32] = "PSOC6-BLE";
+
+        wiced_bt_cfg_settings_t g_bt_cfg_settings = {
+            .device_name = g_device_name,
+            .security_required = 0, /* no bits set: no pairing/bonding/encryption required, see PRD */
+            .p_br_cfg = &br_cfg,
+            .p_ble_cfg = &ble_cfg,
+            .p_gatt_cfg = &gatt_cfg,
+            .p_isoc_cfg = &isoc_cfg,
+            .p_l2cap_app_cfg = &l2cap_app_cfg,
+        };
+
+    } // namespace
+
+/*
+ * Registered directly with wiced_bt_stack_init(). This plain function (not
+ * a class member) is the only code that runs on the BLESS-IPC bt_task
+ * context; it forwards to BLEAdapter's public on_stack_*() handlers, which
+ * only push a lightweight event into the thread-safe queue and signal the
+ * lifecycle semaphore. No other application state is touched here.
+ */
+    static wiced_result_t ble_adapter_management_callback(wiced_bt_management_evt_t event,
+        wiced_bt_management_evt_data_t *p_event_data) {
+        switch (event) {
+            case BTM_ENABLED_EVT:
+                BLEAdapter::instance().on_stack_enabled();
+                break;
+            case BTM_DISABLED_EVT:
+                BLEAdapter::instance().on_stack_disabled();
+                break;
+            default:
+                /* Unhandled events are ignored for this lifecycle-only slice;
+                 * later slices (advertising/connections/GATT) add cases here. */
+                break;
+        }
+        return WICED_BT_SUCCESS;
+    }
+
+    BLEAdapter::BLEAdapter()
+        : _initialized(false),
+        _stack_init_started(false),
+        _last_error(BLE_ADAPTER_ERROR_NONE),
+        _event_queue(nullptr),
+        _lifecycle_sem(nullptr) {
+    }
+
+    BLEAdapter::~BLEAdapter() {
+        if (_event_queue != nullptr) {
+            vQueueDelete(_event_queue);
+        }
+        if (_lifecycle_sem != nullptr) {
+            vSemaphoreDelete(_lifecycle_sem);
+        }
+    }
+
+    BLEAdapter & BLEAdapter::instance() {
+        static BLEAdapter adapter;
+        return adapter;
+    }
+
+    bool BLEAdapter::init(const char *device_name) {
+        if (_initialized) {
+            xQueueReset(_event_queue);
+            _last_error = BLE_ADAPTER_ERROR_NONE;
+            return true;
+        }
+
+        if (device_name != nullptr) {
+            strncpy((char *)g_device_name, device_name, sizeof(g_device_name) - 1);
+            g_device_name[sizeof(g_device_name) - 1] = '\0';
+        }
+
+        if (_event_queue == nullptr) {
+            _event_queue = xQueueCreate(BLE_ADAPTER_EVENT_QUEUE_LENGTH, sizeof(ble_adapter_event_t));
+            if (_event_queue == nullptr) {
+                _last_error = BLE_ADAPTER_ERROR_QUEUE_CREATE_FAILED;
+                return false;
+            }
+        } else {
+            xQueueReset(_event_queue);
+        }
+
+        if (_lifecycle_sem == nullptr) {
+            _lifecycle_sem = xSemaphoreCreateBinary();
+            if (_lifecycle_sem == nullptr) {
+                _last_error = BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED;
+                return false;
+            }
+        }
+
+        if (_stack_init_started) {
+            if (xSemaphoreTake(_lifecycle_sem, BLE_ADAPTER_LIFECYCLE_TIMEOUT_TICKS) != pdTRUE) {
+                _last_error = BLE_ADAPTER_ERROR_STACK_INIT_TIMEOUT;
+                return false;
+            }
+
+            _initialized = true;
+            _last_error = BLE_ADAPTER_ERROR_NONE;
+            return true;
+        }
+
+        /* Drain any stale signal from a previous lifecycle transition before
+         * requesting a fresh stack start. */
+        xSemaphoreTake(_lifecycle_sem, 0);
+
+        cybt_platform_config_init(&cybsp_bt_platform_cfg);
+
+        wiced_result_t result = wiced_bt_stack_init(ble_adapter_management_callback, &g_bt_cfg_settings);
+        if (result != WICED_BT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_STACK_INIT_FAILED;
+            return false;
+        }
+
+        _stack_init_started = true;
+
+        if (xSemaphoreTake(_lifecycle_sem, BLE_ADAPTER_LIFECYCLE_TIMEOUT_TICKS) != pdTRUE) {
+            _last_error = BLE_ADAPTER_ERROR_STACK_INIT_TIMEOUT;
+            return false;
+        }
+
+        _initialized = true;
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    bool BLEAdapter::deinit() {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        xQueueReset(_event_queue);
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    bool BLEAdapter::pop_event(ble_adapter_event_t &event) {
+        if (!_initialized || _event_queue == nullptr) {
+            return false;
+        }
+        return xQueueReceive(_event_queue, &event, 0) == pdTRUE;
+    }
+
+    void BLEAdapter::push_event(ble_adapter_event_type_t type) {
+        if (_event_queue == nullptr) {
+            return;
+        }
+        ble_adapter_event_t event;
+        event.type = type;
+        /* Called from the bt_task context; never blocks the caller. If the
+         * queue is momentarily full the oldest, not-yet-drained event is
+         * dropped rather than stalling the BT stack task. */
+        if (xQueueSend(_event_queue, &event, 0) != pdTRUE) {
+            ble_adapter_event_t dropped;
+            xQueueReceive(_event_queue, &dropped, 0);
+            xQueueSend(_event_queue, &event, 0);
+        }
+    }
+
+    void BLEAdapter::on_stack_enabled() {
+        _initialized = true;
+        push_event(BLE_ADAPTER_EVENT_STACK_ENABLED);
+        if (_lifecycle_sem != nullptr) {
+            xSemaphoreGive(_lifecycle_sem);
+        }
+    }
+
+    void BLEAdapter::on_stack_disabled() {
+        _initialized = false;
+        _stack_init_started = false;
+        push_event(BLE_ADAPTER_EVENT_STACK_DISABLED);
+        if (_lifecycle_sem != nullptr) {
+            xSemaphoreGive(_lifecycle_sem);
+        }
+    }
+
+} // namespace ble_internal

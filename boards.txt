@@ -27,6 +27,11 @@ cy8cproto_063_ble.build.core=psoc6
 cy8cproto_063_ble.build.variant=CY8CPROTO-063-BLE
 cy8cproto_063_ble.build.board.version=release-v4.2.0
 
+# Extra prebuilt archive needed by the BLE library: the closed-source
+# btstack BLE stack implementation (wiced_bt_* symbols), only shipped for
+# this BLE-capable board.
+cy8cproto_063_ble.compiler.mtb_extra_lib.path="{runtime.platform.path}/variants/{build.variant}/libbtstack.a"
+
 # Upload settings
 cy8cproto_063_ble.upload.tool=openocd
 cy8cproto_063_ble.upload.protocol=openocd

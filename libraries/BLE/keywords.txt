@@ -1,0 +1,37 @@
+#######################################
+# Syntax Coloring Map For BLE
+#######################################
+
+#######################################
+# Library (KEYWORD3)
+#######################################
+
+BLE	KEYWORD3
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+BLEClass	KEYWORD1
+ble_error_t	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+end	KEYWORD2
+poll	KEYWORD2
+lastError	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+BLE_ERROR_NONE	LITERAL1
+BLE_ERROR_INIT_FAILED	LITERAL1
+BLE_ERROR_INIT_TIMEOUT	LITERAL1
+BLE_ERROR_ALREADY_INITIALIZED	LITERAL1
+BLE_ERROR_NOT_INITIALIZED	LITERAL1
+BLE_ERROR_DEINIT_FAILED	LITERAL1
+BLE_ERROR_QUEUE_CREATE_FAILED	LITERAL1

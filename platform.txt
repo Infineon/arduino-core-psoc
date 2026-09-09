@@ -95,7 +95,13 @@ recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {compil
 compiler.mtb_lib.path = "{runtime.platform.path}/variants/{build.variant}/mtb-libs.a"
 
 # Linker command
-recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.elf_flags.from_file} {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} {archive_file_path}   -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"  {compiler.mtb_lib.path} {compiler.libraries.ldflags}
+# Optional extra prebuilt static library path, added to the link step after
+# mtb_lib.path. Empty by default; boards that need an additional vendor
+# archive (e.g. the closed-source btstack BLE stack, only shipped for
+# BLE-capable boards) override this per-board in boards.txt.
+compiler.mtb_extra_lib.path=
+
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.elf_flags.from_file} {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} {archive_file_path}   -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"  {compiler.mtb_lib.path} {compiler.mtb_extra_lib.path} {compiler.libraries.ldflags}
 
 ## Compute size
 # ----------------
