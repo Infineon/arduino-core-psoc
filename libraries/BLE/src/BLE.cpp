@@ -38,6 +38,18 @@ namespace {
             case ble_internal::BLE_ADAPTER_ERROR_SCAN_START_FAILED:
             case ble_internal::BLE_ADAPTER_ERROR_SCAN_STOP_FAILED:
                 return BLE_ERROR_SCAN_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_INVALID_ADDRESS:
+                return BLE_ERROR_INVALID_ADDRESS;
+            case ble_internal::BLE_ADAPTER_ERROR_ALREADY_CONNECTED:
+                return BLE_ERROR_ALREADY_CONNECTED;
+            case ble_internal::BLE_ADAPTER_ERROR_NOT_CONNECTED:
+                return BLE_ERROR_NOT_CONNECTED;
+            case ble_internal::BLE_ADAPTER_ERROR_CONNECT_FAILED:
+            case ble_internal::BLE_ADAPTER_ERROR_CONNECT_TIMEOUT:
+                return BLE_ERROR_CONNECT_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_DISCONNECT_FAILED:
+            case ble_internal::BLE_ADAPTER_ERROR_DISCONNECT_TIMEOUT:
+                return BLE_ERROR_DISCONNECT_FAILED;
             default:
                 return BLE_ERROR_UNKNOWN;
         }
@@ -202,6 +214,28 @@ BLEDevice BLEClass::available() {
     _discoveredHead = (_discoveredHead + 1) % MAX_DISCOVERED_DEVICES;
     _discoveredCount--;
     return device;
+}
+
+BLEDevice BLEClass::central() {
+    /* Only surface a BLEDevice here when a central connected to us
+     * (peripheral role); a connection this device itself initiated via
+     * BLEDevice::connect() (central role) is not "the central". */
+    if (!BLEAdapter::instance().is_connected() || BLEAdapter::instance().is_local_central()) {
+        return BLEDevice();
+    }
+
+    BLEDevice device;
+    device._setAddress(BLEAdapter::instance().connected_address());
+    return device;
+}
+
+bool BLEClass::connected() const {
+    return BLEAdapter::instance().is_connected();
+}
+
+bool BLEClass::_reportConnectionResult(bool success) {
+    _last_error = success ? BLE_ERROR_NONE : map_adapter_error(BLEAdapter::instance().last_error());
+    return success;
 }
 
 void BLEClass::_queueDiscoveredDevice(const BLEDevice &device) {

@@ -1,7 +1,19 @@
 #include "BLEDevice.h"
 
+#include "BLE.h"
+#include "internal/ble_adapter.h"
+
 #include <string.h>
 #include <strings.h>
+
+/* internal/ble_adapter.h (included above) pulls in FreeRTOSConfig.h ->
+ * the PSOC6 PDL device headers, which '#define BLE' as the BLESS
+ * peripheral register base address macro - re-polluting the macro after
+ * BLE.h's own (earlier) undef. Must be undone again here, immediately
+ * before this file's uses of the "BLE" singleton below (see BLE.h). */
+#ifdef BLE
+#undef BLE
+#endif
 
 BLEDevice::BLEDevice()
     : _rssi(0), _serviceUuidCount(0) {
@@ -50,6 +62,26 @@ bool BLEDevice::hasAdvertisedServiceUuid(const char *uuid) const {
         }
     }
     return false;
+}
+
+bool BLEDevice::connect() {
+    if (!hasAddress()) {
+        return false;
+    }
+    return BLE._reportConnectionResult(ble_internal::BLEAdapter::instance().connect(_address));
+}
+
+bool BLEDevice::disconnect() {
+    if (!connected()) {
+        return true;
+    }
+    return BLE._reportConnectionResult(ble_internal::BLEAdapter::instance().disconnect());
+}
+
+bool BLEDevice::connected() const {
+    ble_internal::BLEAdapter &adapter = ble_internal::BLEAdapter::instance();
+    return hasAddress() && adapter.is_connected()
+           && strcasecmp(adapter.connected_address(), _address) == 0;
 }
 
 void BLEDevice::_setAddress(const char *address) {

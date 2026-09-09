@@ -5,14 +5,20 @@
 #include <stdint.h>
 
 /**
- * A remote BLE peripheral discovered by BLE.scan(), retrieved one at a time
- * via BLE.available(). Exposes the address/local name/RSSI/advertised
- * service UUIDs captured from that peripheral's advertising packet(s) at
- * the moment it was discovered.
+ * A remote BLE peer: either a peripheral discovered by BLE.scan() (and
+ * retrieved one at a time via BLE.available()), or the connected central
+ * returned by BLE.central() (peripheral role). Exposes the
+ * address/local name/RSSI/advertised service UUIDs captured from a scanned
+ * peripheral's advertising packet(s) at the moment it was discovered, and
+ * connect()/disconnect()/connected() to establish and query a connection to
+ * this peer.
  *
  * BLEDevice is a plain data holder filled in by BLEClass from the internal
- * adapter's scan results; it never talks to the internal adapter or
- * btstack directly.
+ * adapter's scan results; connect()/disconnect()/connected() are the only
+ * BLEDevice methods that reach into the internal adapter directly (there is
+ * only ever one active connection at a time - see the PRD's "Connection
+ * topology" decision - so the adapter, not this value type, is the source
+ * of truth for current connection state).
  */
 class BLEDevice {
 
@@ -57,6 +63,25 @@ public:
     /* True if the peripheral advertised the given service UUID (16-bit or
      * 128-bit UUID string, case-insensitive). */
     bool hasAdvertisedServiceUuid(const char *uuid) const;
+
+    /* Establishes a connection (central role) to this device's address.
+     * Blocks (bounded by an internal timeout) until the connection
+     * completes. Only one connection is supported at a time (see the PRD's
+     * "Connection topology" decision); returns false if this device has no
+     * address, a connection is already active, or the connection attempt
+     * fails/times out - see BLE.lastError(). */
+    bool connect();
+
+    /* Ends the connection to this device, if it is the currently connected
+     * peer (in either role - this also works to end an incoming connection
+     * from a central returned by BLE.central()). Blocks (bounded by an
+     * internal timeout) until the disconnection completes. Safe to call
+     * when this device isn't the connected peer (returns true, no-op). */
+    bool disconnect();
+
+    /* True if this device is the currently connected peer (in either
+     * role). */
+    bool connected() const;
 
     /* Internal-use only: fills in this BLEDevice's fields from a scan
      * result. Not part of the sketch-facing API; only BLEClass calls this

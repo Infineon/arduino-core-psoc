@@ -27,6 +27,11 @@ typedef enum {
     BLE_ERROR_INVALID_UUID,
     BLE_ERROR_ADVERTISE_FAILED,
     BLE_ERROR_SCAN_FAILED,
+    BLE_ERROR_INVALID_ADDRESS,
+    BLE_ERROR_ALREADY_CONNECTED,
+    BLE_ERROR_NOT_CONNECTED,
+    BLE_ERROR_CONNECT_FAILED,
+    BLE_ERROR_DISCONNECT_FAILED,
     BLE_ERROR_UNKNOWN,
 } ble_error_t;
 
@@ -97,8 +102,28 @@ public:
      * has had a chance to drain the internal adapter's scan results. */
     BLEDevice available();
 
+    /* Returns the currently connected central's BLEDevice (peripheral
+     * role), once a central has connected (e.g. after advertise()). Returns
+     * a default-constructed (BLEDevice::hasAddress() == false) BLEDevice if
+     * no central is connected, or if the current connection was instead
+     * initiated locally via BLEDevice::connect() (central role). */
+    BLEDevice central();
+
+    /* True if a connection is currently established, in either role (a
+     * central connected to this peripheral, or this device connected as
+     * central to a peripheral via BLEDevice::connect()). */
+    bool connected() const;
+
     /* Returns the reason the most recent failing call failed. */
     ble_error_t lastError() const;
+
+    /* Internal-use only: called by BLEDevice::connect()/disconnect() so
+     * their result surfaces through BLE.lastError() (mapped from the
+     * internal adapter's error code when 'success' is false), keeping a
+     * single last-error convention across the public API surface even
+     * though BLEDevice - not BLEClass - drives those two adapter calls.
+     * Not part of the sketch-facing API. Returns 'success' unchanged. */
+    bool _reportConnectionResult(bool success);
 
 private:
 

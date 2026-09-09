@@ -53,6 +53,13 @@ namespace ble_internal {
         BLE_ADAPTER_ERROR_ADVERTISE_START_FAILED,
         BLE_ADAPTER_ERROR_SCAN_START_FAILED,
         BLE_ADAPTER_ERROR_SCAN_STOP_FAILED,
+        BLE_ADAPTER_ERROR_INVALID_ADDRESS,
+        BLE_ADAPTER_ERROR_ALREADY_CONNECTED,
+        BLE_ADAPTER_ERROR_NOT_CONNECTED,
+        BLE_ADAPTER_ERROR_CONNECT_FAILED,
+        BLE_ADAPTER_ERROR_CONNECT_TIMEOUT,
+        BLE_ADAPTER_ERROR_DISCONNECT_FAILED,
+        BLE_ADAPTER_ERROR_DISCONNECT_TIMEOUT,
     } ble_adapter_error_t;
 
 /* Maximum number of advertised service UUIDs captured per scan result
@@ -88,12 +95,31 @@ namespace ble_internal {
         BLE_ADAPTER_EVENT_STACK_ENABLED = 0,
         BLE_ADAPTER_EVENT_STACK_DISABLED,
         BLE_ADAPTER_EVENT_SCAN_RESULT,
+        BLE_ADAPTER_EVENT_CONNECTED,
+        BLE_ADAPTER_EVENT_DISCONNECTED,
     } ble_adapter_event_type_t;
+
+/* Valid only when type == BLE_ADAPTER_EVENT_CONNECTED or
+ * BLE_ADAPTER_EVENT_DISCONNECTED. 'is_local_central' is true when this
+ * device initiated the connection (i.e. it is acting as central towards
+ * 'address', a peripheral); false when the connection was initiated by the
+ * remote side (i.e. this device is acting as peripheral and 'address' is
+ * the connected central). Pushed for consistency with other lifecycle
+ * events even though BLEAdapter's connect()/disconnect() calls already
+ * observe the same transition synchronously; a future slice may use this
+ * for peripheral-side "central just connected" bookkeeping in BLE.poll(). */
+    typedef struct {
+        char address[18];
+        bool is_local_central;
+    } ble_adapter_connection_event_t;
 
     typedef struct {
         ble_adapter_event_type_t type;
         /* Valid only when type == BLE_ADAPTER_EVENT_SCAN_RESULT. */
         ble_adapter_scan_result_t scan_result;
+        /* Valid only when type == BLE_ADAPTER_EVENT_CONNECTED or
+         * BLE_ADAPTER_EVENT_DISCONNECTED. */
+        ble_adapter_connection_event_t connection;
     } ble_adapter_event_t;
 
     class BLEAdapter {
@@ -140,6 +166,41 @@ namespace ble_internal {
          * scanning was never started. */
         bool stop_scan();
 
+        /* Initiates a connection (central role) to the peripheral at
+         * 'address' ("AA:BB:CC:DD:EE:FF") and blocks (bounded by an internal
+         * timeout) until the connection completes. Only one connection is
+         * supported at a time (see PRD "Connection topology"); returns
+         * false (see last_error()) if already connected, 'address' can't be
+         * parsed, the underlying btstack call fails, or the connection
+         * doesn't complete before the timeout. */
+        bool connect(const char *address);
+
+        /* Ends the current connection (either role) and blocks (bounded by
+         * an internal timeout) until the disconnection completes. Safe to
+         * call when not connected (returns true, no-op). */
+        bool disconnect();
+
+        /* True if a GATT connection is currently established, in either
+         * role. */
+        bool is_connected() const {
+            return _connected;
+        }
+
+        /* The connected peer's address ("AA:BB:CC:DD:EE:FF"), or "" if not
+         * currently connected. */
+        const char * connected_address() const {
+            return _peer_address;
+        }
+
+        /* True if this device initiated the current connection (i.e. it is
+         * acting as central and 'connected_address()' is a peripheral);
+         * false if the remote side initiated it (i.e. this device is acting
+         * as peripheral and 'connected_address()' is the connected
+         * central). Meaningless (returns false) when not connected. */
+        bool is_local_central() const {
+            return _connected && _is_local_central;
+        }
+
         bool is_initialized() const {
             return _initialized;
         }
@@ -167,6 +228,15 @@ namespace ble_internal {
          * stop_scan(). */
         void on_scan_result(const void *p_scan_result, const uint8_t *p_adv_data);
 
+        /* Called by the file-local wiced_bt_gatt_cback_t trampoline in the
+         * .cpp (registered once with wiced_bt_gatt_register(), runs on the
+         * BLESS-IPC bt_task context) for every GATT event. This slice only
+         * handles GATT_CONNECTION_STATUS_EVT; unhandled events are ignored.
+         * Public so the trampoline (a plain C-linkage function, not a
+         * member) can call it, but not part of the intended sketch-facing
+         * API. */
+        void on_gatt_connection_status(const void *p_connection_status);
+
     private:
         BLEAdapter();
         ~BLEAdapter();
@@ -175,6 +245,7 @@ namespace ble_internal {
 
         void push_event(ble_adapter_event_type_t type);
         void push_scan_result_event(const ble_adapter_scan_result_t &scan_result);
+        void push_connection_event(ble_adapter_event_type_t type, const char *address, bool is_local_central);
 
         volatile bool _initialized;
         volatile bool _stack_init_started; /* wiced_bt_stack_init succeeded; enable event may still be pending */
@@ -201,6 +272,33 @@ namespace ble_internal {
         /* Used only to make init()/deinit() synchronous: signaled by
          * management_callback() when the corresponding lifecycle event arrives. */
         SemaphoreHandle_t _lifecycle_sem;
+
+        /* Connection state (single active connection at a time, either
+         * role - see PRD "Connection topology"). Updated only from
+         * on_gatt_connection_status() (bt_task context); connect()/
+         * disconnect() (sketch task context) only read it after waking from
+         * _connection_sem, so no separate lock is needed beyond the
+         * queue/semaphore hand-off already used elsewhere in this adapter. */
+        volatile bool _connected;
+        bool _is_local_central;
+        char _peer_address[18];
+        uint16_t _conn_id;
+
+        /* Set by connect() before calling wiced_bt_gatt_le_connect() so
+         * on_gatt_connection_status() can confirm the resulting
+         * GATT_CONNECTION_STATUS_EVT is for the address being connected to
+         * (rather than an unrelated stale event). */
+        char _connecting_address[18];
+
+        /* Used only to make connect()/disconnect() synchronous: signaled by
+         * on_gatt_connection_status() when the corresponding connection/
+         * disconnection event arrives. */
+        SemaphoreHandle_t _connection_sem;
+
+        /* True once wiced_bt_gatt_register() has been called; registration
+         * is not undone by deinit() since (like the BLESS-IPC stack itself)
+         * it is not restart-safe. */
+        bool _gatt_registered;
     };
 
 } // namespace ble_internal

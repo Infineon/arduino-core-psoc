@@ -11,6 +11,7 @@ extern "C" {
 #include "cybsp_bt_config.h"
 #include "wiced_bt_stack.h"
 #include "wiced_bt_ble.h"
+#include "wiced_bt_gatt.h"
 }
 
 #include <string.h>
@@ -107,6 +108,24 @@ namespace ble_internal {
                 addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
         }
 
+/* Parses a "AA:BB:CC:DD:EE:FF" address string (as produced by
+ * format_address(), e.g. from BLEDevice::address()) into 6 raw bytes.
+ * Returns false if 'address' isn't exactly that format. */
+        bool parse_address(const char *address, uint8_t *out) {
+            if (address == nullptr) {
+                return false;
+            }
+            unsigned int bytes[6];
+            if (sscanf(address, "%02x:%02x:%02x:%02x:%02x:%02x",
+                &bytes[0], &bytes[1], &bytes[2], &bytes[3], &bytes[4], &bytes[5]) != 6) {
+                return false;
+            }
+            for (int i = 0; i < 6; i++) {
+                out[i] = (uint8_t)bytes[i];
+            }
+            return true;
+        }
+
 /* Formats a UUID's over-the-air bytes (as returned by
  * wiced_bt_ble_check_advertising_data(), little-endian for 16-bit, reversed
  * textual order for 128-bit - see parse_uuid() above for the inverse
@@ -164,6 +183,12 @@ namespace ble_internal {
  * BTM_ENABLED_EVT/BTM_DISABLED_EVT to arrive from the bt_task. */
         constexpr TickType_t BLE_ADAPTER_LIFECYCLE_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
         constexpr UBaseType_t BLE_ADAPTER_EVENT_QUEUE_LENGTH = 16;
+
+/* Bounds how long connect()/disconnect() block waiting for the
+ * corresponding GATT_CONNECTION_STATUS_EVT to arrive from the bt_task.
+ * Connection establishment involves an over-the-air exchange with the
+ * peer, so this is generously longer than the lifecycle timeout above. */
+        constexpr TickType_t BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS = pdMS_TO_TICKS(10000);
 
 /* Minimal, hand-authored LE-only stack configuration (single peripheral/
  * central connection, no bonding/pairing - see PRD "Connection topology"
@@ -288,14 +313,39 @@ namespace ble_internal {
         BLEAdapter::instance().on_scan_result(p_scan_result, p_adv_data);
     }
 
+/*
+ * Registered directly with wiced_bt_gatt_register(). Runs on the
+ * BLESS-IPC bt_task context for every GATT event; forwards
+ * GATT_CONNECTION_STATUS_EVT to BLEAdapter's public
+ * on_gatt_connection_status(), which only updates the (volatile) connection
+ * state, pushes a fixed-size event into the thread-safe queue, and signals
+ * the connection semaphore. No other application state is touched here.
+ */
+    static wiced_bt_gatt_status_t ble_adapter_gatt_callback(wiced_bt_gatt_evt_t event,
+        wiced_bt_gatt_event_data_t *p_event_data) {
+        if (event == GATT_CONNECTION_STATUS_EVT) {
+            BLEAdapter::instance().on_gatt_connection_status(&p_event_data->connection_status);
+        }
+        /* Other event types (attribute discovery/read/write/notify) have
+         * nothing to do here yet; later slices (005/006) extend this. */
+        return WICED_BT_GATT_SUCCESS;
+    }
+
     BLEAdapter::BLEAdapter()
         : _initialized(false),
         _stack_init_started(false),
         _last_error(BLE_ADAPTER_ERROR_NONE),
         _pending_scan_result_valid(false),
         _event_queue(nullptr),
-        _lifecycle_sem(nullptr) {
+        _lifecycle_sem(nullptr),
+        _connected(false),
+        _is_local_central(false),
+        _conn_id(0),
+        _connection_sem(nullptr),
+        _gatt_registered(false) {
         _scan_service_uuid_filter[0] = '\0';
+        _peer_address[0] = '\0';
+        _connecting_address[0] = '\0';
     }
 
     BLEAdapter::~BLEAdapter() {
@@ -304,6 +354,9 @@ namespace ble_internal {
         }
         if (_lifecycle_sem != nullptr) {
             vSemaphoreDelete(_lifecycle_sem);
+        }
+        if (_connection_sem != nullptr) {
+            vSemaphoreDelete(_connection_sem);
         }
     }
 
@@ -342,6 +395,14 @@ namespace ble_internal {
             }
         }
 
+        if (_connection_sem == nullptr) {
+            _connection_sem = xSemaphoreCreateBinary();
+            if (_connection_sem == nullptr) {
+                _last_error = BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED;
+                return false;
+            }
+        }
+
         if (_stack_init_started) {
             if (xSemaphoreTake(_lifecycle_sem, BLE_ADAPTER_LIFECYCLE_TIMEOUT_TICKS) != pdTRUE) {
                 _last_error = BLE_ADAPTER_ERROR_STACK_INIT_TIMEOUT;
@@ -349,6 +410,9 @@ namespace ble_internal {
             }
 
             _initialized = true;
+            if (!_gatt_registered && wiced_bt_gatt_register(ble_adapter_gatt_callback) == WICED_BT_GATT_SUCCESS) {
+                _gatt_registered = true;
+            }
             _last_error = BLE_ADAPTER_ERROR_NONE;
             return true;
         }
@@ -373,6 +437,9 @@ namespace ble_internal {
         }
 
         _initialized = true;
+        if (!_gatt_registered && wiced_bt_gatt_register(ble_adapter_gatt_callback) == WICED_BT_GATT_SUCCESS) {
+            _gatt_registered = true;
+        }
         _last_error = BLE_ADAPTER_ERROR_NONE;
         return true;
     }
@@ -418,6 +485,25 @@ namespace ble_internal {
         ble_adapter_event_t event;
         event.type = BLE_ADAPTER_EVENT_SCAN_RESULT;
         event.scan_result = scan_result;
+        /* Called from the bt_task context; never blocks the caller. If the
+         * queue is momentarily full the oldest, not-yet-drained event is
+         * dropped rather than stalling the BT stack task. */
+        if (xQueueSend(_event_queue, &event, 0) != pdTRUE) {
+            ble_adapter_event_t dropped;
+            xQueueReceive(_event_queue, &dropped, 0);
+            xQueueSend(_event_queue, &event, 0);
+        }
+    }
+
+    void BLEAdapter::push_connection_event(ble_adapter_event_type_t type, const char *address, bool is_local_central) {
+        if (_event_queue == nullptr) {
+            return;
+        }
+        ble_adapter_event_t event;
+        event.type = type;
+        strncpy(event.connection.address, address, sizeof(event.connection.address) - 1);
+        event.connection.address[sizeof(event.connection.address) - 1] = '\0';
+        event.connection.is_local_central = is_local_central;
         /* Called from the bt_task context; never blocks the caller. If the
          * queue is momentarily full the oldest, not-yet-drained event is
          * dropped rather than stalling the BT stack task. */
@@ -589,6 +675,116 @@ namespace ble_internal {
 
         _last_error = BLE_ADAPTER_ERROR_NONE;
         return true;
+    }
+
+    bool BLEAdapter::connect(const char *address) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        if (_connected) {
+            _last_error = BLE_ADAPTER_ERROR_ALREADY_CONNECTED;
+            return false;
+        }
+
+        uint8_t bd_addr[6];
+        if (!parse_address(address, bd_addr)) {
+            _last_error = BLE_ADAPTER_ERROR_INVALID_ADDRESS;
+            return false;
+        }
+
+        strncpy(_connecting_address, address, sizeof(_connecting_address) - 1);
+        _connecting_address[sizeof(_connecting_address) - 1] = '\0';
+        _is_local_central = true;
+
+        /* Drain any stale signal from a previous connect()/disconnect()
+         * before requesting a fresh connection. */
+        xSemaphoreTake(_connection_sem, 0);
+
+        if (!wiced_bt_gatt_le_connect(bd_addr, BLE_ADDR_PUBLIC, BLE_CONN_MODE_HIGH_DUTY, WICED_TRUE)) {
+            _last_error = BLE_ADAPTER_ERROR_CONNECT_FAILED;
+            return false;
+        }
+
+        if (xSemaphoreTake(_connection_sem, BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS) != pdTRUE) {
+            wiced_bt_gatt_cancel_connect(bd_addr, WICED_TRUE);
+            _last_error = BLE_ADAPTER_ERROR_CONNECT_TIMEOUT;
+            return false;
+        }
+
+        if (!_connected || strcasecmp(_peer_address, address) != 0) {
+            /* Woke up for a connection-status event, but not the successful
+             * connection to 'address' being waited for (e.g. the remote
+             * rejected/timed out the request). */
+            _last_error = BLE_ADAPTER_ERROR_CONNECT_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    bool BLEAdapter::disconnect() {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        if (!_connected) {
+            _last_error = BLE_ADAPTER_ERROR_NONE;
+            return true;
+        }
+
+        /* Drain any stale signal from a previous connect()/disconnect()
+         * before requesting the disconnect. */
+        xSemaphoreTake(_connection_sem, 0);
+
+        if (wiced_bt_gatt_disconnect(_conn_id) != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_DISCONNECT_FAILED;
+            return false;
+        }
+
+        if (xSemaphoreTake(_connection_sem, BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS) != pdTRUE) {
+            _last_error = BLE_ADAPTER_ERROR_DISCONNECT_TIMEOUT;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    void BLEAdapter::on_gatt_connection_status(const void *p_connection_status) {
+        const wiced_bt_gatt_connection_status_t *status =
+            reinterpret_cast < const wiced_bt_gatt_connection_status_t * > (p_connection_status);
+
+        char address[18];
+        format_address(status->bd_addr, address, sizeof(address));
+
+        if (status->connected) {
+            _connected = true;
+            _conn_id = status->conn_id;
+            strncpy(_peer_address, address, sizeof(_peer_address) - 1);
+            _peer_address[sizeof(_peer_address) - 1] = '\0';
+            /* If this connection completed a pending connect() to this same
+             * address, it's local-central; otherwise it's an unsolicited
+             * incoming connection (remote-initiated, i.e. this device is
+             * acting as peripheral). */
+            _is_local_central = (_connecting_address[0] != '\0'
+                && strcasecmp(_connecting_address, address) == 0);
+            push_connection_event(BLE_ADAPTER_EVENT_CONNECTED, address, _is_local_central);
+        } else {
+            _connected = false;
+            push_connection_event(BLE_ADAPTER_EVENT_DISCONNECTED, address, _is_local_central);
+            _peer_address[0] = '\0';
+            _is_local_central = false;
+        }
+
+        _connecting_address[0] = '\0';
+
+        if (_connection_sem != nullptr) {
+            xSemaphoreGive(_connection_sem);
+        }
     }
 
     void BLEAdapter::on_stack_enabled() {
