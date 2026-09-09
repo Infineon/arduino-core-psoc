@@ -16,6 +16,7 @@ BLEClass	KEYWORD1
 ble_error_t	KEYWORD1
 BLEService	KEYWORD1
 BLECharacteristic	KEYWORD1
+BLEDescriptor	KEYWORD1
 BLEDevice	KEYWORD1
 
 #######################################
@@ -39,6 +40,10 @@ valueLength	KEYWORD2
 value	KEYWORD2
 readValue	KEYWORD2
 writeValue	KEYWORD2
+subscribe	KEYWORD2
+unsubscribe	KEYWORD2
+subscribed	KEYWORD2
+valueUpdated	KEYWORD2
 scan	KEYWORD2
 stopScan	KEYWORD2
 available	KEYWORD2

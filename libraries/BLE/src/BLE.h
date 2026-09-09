@@ -6,6 +6,7 @@
 
 #include "BLEService.h"
 #include "BLECharacteristic.h"
+#include "BLEDescriptor.h"
 #include "BLEDevice.h"
 
 /**

@@ -11,7 +11,9 @@ BLECharacteristic::BLECharacteristic(const char *uuid, uint8_t properties, int v
     _valueHandleField(0),
     _cccdHandleField(0),
     _remote(false),
-    _written(false) {
+    _written(false),
+    _valueUpdated(false),
+    _subscribed(false) {
     _uuid[0] = '\0';
     if (uuid != nullptr) {
         strncpy(_uuid, uuid, sizeof(_uuid) - 1);
@@ -79,6 +81,12 @@ bool BLECharacteristic::writeValue(const uint8_t *value, int length) {
         memcpy(_value, value, length);
     }
     _valueLength = length;
+
+    if (!_remote && _subscribed && (_properties & (BLENotify | BLEIndicate))) {
+        bool indicate = (_properties & BLEIndicate) != 0;
+        ble_internal::BLEAdapter::instance().notify_characteristic_value(_valueHandleField, _value, _valueLength, indicate);
+    }
+
     return true;
 }
 
@@ -88,6 +96,41 @@ bool BLECharacteristic::written() {
     }
     _written = false;
     return true;
+}
+
+bool BLECharacteristic::subscribe() {
+    if (!_remote || _cccdHandleField == 0) {
+        return false;
+    }
+
+    /* Prefer notifications when both BLENotify and BLEIndicate are set,
+     * matching most peripherals' expectations (indications add an
+     * acknowledgement round-trip that isn't needed unless the peripheral
+     * only declared BLEIndicate). */
+    uint16_t cccd_value = (_properties & BLENotify) ? 0x0001 : 0x0002;
+    uint8_t buffer[2] = { (uint8_t)(cccd_value & 0xFF), (uint8_t)((cccd_value >> 8) & 0xFF) };
+    return ble_internal::BLEAdapter::instance().write_remote_characteristic(_cccdHandleField, buffer, sizeof(buffer));
+}
+
+bool BLECharacteristic::unsubscribe() {
+    if (!_remote || _cccdHandleField == 0) {
+        return false;
+    }
+
+    uint8_t buffer[2] = { 0x00, 0x00 };
+    return ble_internal::BLEAdapter::instance().write_remote_characteristic(_cccdHandleField, buffer, sizeof(buffer));
+}
+
+bool BLECharacteristic::valueUpdated() {
+    if (!_valueUpdated) {
+        return false;
+    }
+    _valueUpdated = false;
+    return true;
+}
+
+bool BLECharacteristic::subscribed() const {
+    return _subscribed;
 }
 
 bool BLECharacteristic::isRemote() const {
@@ -133,4 +176,22 @@ void BLECharacteristic::_setValueFromPeer(const uint8_t *value, int length) {
     }
     _valueLength = length;
     _written = true;
+}
+
+void BLECharacteristic::_setValueFromNotification(const uint8_t *value, int length) {
+    if (length < 0) {
+        return;
+    }
+    if (length > _valueSize) {
+        length = _valueSize;
+    }
+    if (length > 0 && value != nullptr) {
+        memcpy(_value, value, length);
+    }
+    _valueLength = length;
+    _valueUpdated = true;
+}
+
+void BLECharacteristic::_setSubscribed(bool subscribed) {
+    _subscribed = subscribed;
 }

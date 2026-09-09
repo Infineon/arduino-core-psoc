@@ -68,7 +68,10 @@ public:
      * blocking GATT write to the connected peripheral (central role) before
      * updating the local cache; returns false if that write fails/times out
      * (see BLE.lastError()). Returns false (and leaves the value unchanged)
-     * if 'length' exceeds valueSize(). */
+     * if 'length' exceeds valueSize(). On a locally-declared (peripheral
+     * role) characteristic with BLENotify/BLEIndicate in its properties()
+     * and a currently subscribed() central, this also sends a notification/
+     * indication of the new value to that central. */
     bool writeValue(const uint8_t *value, int length);
     bool writeValue(const char *value);
 
@@ -79,6 +82,45 @@ public:
      * arrives. Always false for a remote (centrally-discovered)
      * characteristic. */
     bool written();
+
+    /* Central role: subscribes to (BLENotify)/enables indications for
+     * (BLEIndicate, preferred when both are set) this remote characteristic
+     * by writing its discovered Client Characteristic Configuration
+     * Descriptor (CCCD) on the connected peripheral. Requires this
+     * characteristic to be remote (see isRemote(), set by
+     * BLEDevice::discoverAttributes()) and to have a discovered CCCD handle
+     * (i.e. BLENotify or BLEIndicate was set in its properties()). Blocks
+     * (bounded by an internal timeout); returns false on failure/timeout
+     * or if the preconditions above aren't met (see BLE.lastError()). */
+    bool subscribe();
+
+    /* Central role: disables notifications/indications previously enabled
+     * by subscribe(), by writing zero to the CCCD. Same preconditions/
+     * blocking behavior as subscribe(). */
+    bool unsubscribe();
+
+    /* Central role: true once since the last call to valueUpdated() a
+     * notification/indication for this remote characteristic has been
+     * received from the connected peripheral (requires an active
+     * subscribe(); see BLE.poll(), which must be called regularly for
+     * notifications to be received and dispatched). Consumes the pending
+     * flag like written(). Always false for a locally-declared (peripheral
+     * role) characteristic. */
+    bool valueUpdated();
+
+    /* Peripheral role: true while a connected central currently has
+     * notifications and/or indications enabled for this characteristic
+     * (i.e. has written a non-zero value to its CCCD - see
+     * BLEAdapter::on_gatt_attribute_request()). Reflects current state
+     * rather than consuming a pending flag (unlike written()). Sketch
+     * authors should check this before calling writeValue() if they only
+     * want to do the work of producing a new value when someone is
+     * listening; writeValue() itself always sends a notification/
+     * indication when this is true, regardless of whether the caller
+     * checked first. Always false for a remote (centrally-discovered)
+     * characteristic, or one without BLENotify/BLEIndicate in its
+     * properties(). */
+    bool subscribed() const;
 
     /* True if this characteristic represents a remote attribute discovered
      * by BLEDevice::discoverAttributes() (central role) rather than one
@@ -112,6 +154,21 @@ public:
      * sketch-facing API. */
     void _setValueFromPeer(const uint8_t *value, int length);
 
+    /* Internal-use only: called by the internal adapter (central role)
+     * when a notification/indication for this remote characteristic
+     * arrives (see BLEAdapter::on_gatt_operation_complete()). Updates the
+     * value buffer and marks valueUpdated() to return true on its next
+     * call; unlike _setValueFromPeer(), does not affect written(). Not
+     * part of the sketch-facing API. */
+    void _setValueFromNotification(const uint8_t *value, int length);
+
+    /* Internal-use only: called by the internal adapter's GATT server
+     * (GATT_ATTRIBUTE_REQUEST_EVT write handling) when a connected central
+     * writes to this characteristic's CCCD, reflecting its current
+     * subscribe state (see subscribed()). Not part of the sketch-facing
+     * API. */
+    void _setSubscribed(bool subscribed);
+
 private:
 
     char _uuid[37]; /* Fits a 128-bit UUID string ("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\0"). */
@@ -123,6 +180,8 @@ private:
     uint16_t _cccdHandleField;
     bool _remote;
     bool _written;
+    bool _valueUpdated;
+    bool _subscribed;
 };
 
 #endif /* BLE_CHARACTERISTIC_H */

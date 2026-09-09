@@ -236,6 +236,19 @@ namespace ble_internal {
          * write fails/times out. */
         bool write_remote_characteristic(uint16_t value_handle, const uint8_t *value, int length);
 
+        /* Peripheral role: sends a notification (or, when 'indicate' is
+         * true, an indication) of 'value' (0 <= length <= the connected
+         * peer's negotiated MTU - 3) for the local characteristic at
+         * 'value_handle' to the currently connected central. This is
+         * fire-and-forget (not blocking on the peer's acknowledgement,
+         * unlike read/write_remote_characteristic()); a failing send is
+         * only reflected in this call's return value/last_error(), not a
+         * later event. Returns false (see last_error()) if not connected
+         * as peripheral (i.e. is_connected() && !is_local_central()) or the
+         * underlying btstack call fails. */
+        bool notify_characteristic_value(uint16_t value_handle, const uint8_t *value, int length, bool indicate);
+
+
         /* True if a GATT connection is currently established, in either
          * role. */
         bool is_connected() const {
@@ -337,6 +350,11 @@ namespace ble_internal {
          * only valid for the connection they were discovered on). */
         void free_discovered_services();
 
+        /* Central role: searches every discovered service's characteristics
+         * for one whose value handle matches, for dispatching an incoming
+         * notification/indication (see on_gatt_operation_complete()). */
+        BLECharacteristic * find_discovered_characteristic(uint16_t value_handle) const;
+
         volatile bool _initialized;
         volatile bool _stack_init_started; /* wiced_bt_stack_init succeeded; enable event may still be pending */
         ble_adapter_error_t _last_error;
@@ -421,6 +439,12 @@ namespace ble_internal {
 
         BLECharacteristic * find_local_characteristic(uint16_t value_handle) const;
 
+        /* Same lookup as find_local_characteristic(), but by CCCD handle
+         * (BLECharacteristic::_cccdHandle()) rather than value handle; used
+         * to dispatch a connected central's CCCD write to the right
+         * characteristic's subscribed state (see on_gatt_attribute_request()). */
+        BLECharacteristic * find_local_characteristic_by_cccd(uint16_t cccd_handle) const;
+
         /* Maximum number of services/characteristics-per-service this
          * adapter can hold from a single discover_attributes() call.
          * Mirrors BLEClass::MAX_SERVICES/BLEService::MAX_CHARACTERISTICS. */
@@ -439,11 +463,20 @@ namespace ble_internal {
          * services (GATT_DISCOVER_SERVICES_ALL). */
         int _discovery_current_service_index;
 
+        /* Set by discover_attributes() before requesting a
+         * GATT_DISCOVER_CHARACTERISTIC_DESCRIPTORS discovery step (run per
+         * BLENotify/BLEIndicate characteristic after all of a service's
+         * characteristics are discovered), so on_gatt_discovery_result()
+         * knows which discovered characteristic to set the CCCD handle on
+         * when it finds one (UUID "2902", see IS_CHAR_CLIENT_CONFIG_UUID()).
+         * nullptr outside of that step. */
+        BLECharacteristic *_discovery_current_characteristic;
+
         /* Used only to make discover_blocking() synchronous: signaled by
          * on_gatt_discovery_complete() when the corresponding discovery
          * step finishes. */
         SemaphoreHandle_t _discovery_sem;
-        uint8_t _discovery_status; /* wiced_bt_gatt_status_t, cached by on_gatt_discovery_complete() */
+        uint16_t _discovery_status; /* wiced_bt_gatt_status_t, cached by on_gatt_discovery_complete() */
 
         /* Used only to make read_remote_characteristic()/
          * write_remote_characteristic() synchronous: signaled by

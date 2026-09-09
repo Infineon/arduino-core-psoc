@@ -294,6 +294,32 @@ namespace ble_internal {
  * peer, so this is generously longer than the lifecycle timeout above. */
         constexpr TickType_t BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS = pdMS_TO_TICKS(10000);
 
+/* Immediately after a connection completes, the peer's GATT server may not
+ * yet be ready to answer requests (its own connection-scoped state, e.g.
+ * BLESS-IPC/notification bookkeeping, can still be settling) - a discovery
+ * request sent too early can come back with a generic GATT error rather
+ * than a real "not found"/timeout. This has been hardware-observed to be
+ * more likely the larger the peer's GATT database (e.g. once a CCCD is
+ * present), but isn't inherently limited to that case.
+ *
+ * Unlike most transient GATT errors, this one is NOT safely retriable in
+ * place: once wiced_bt_gatt_client_send_discover() has returned this
+ * failure once for a connection, the underlying stack's GATT client
+ * context for that connection has been hardware-observed to stay wedged
+ * (every subsequent discover call on the same connection synchronously
+ * fails with WICED_BT_GATT_ILLEGAL_PARAMETER, regardless of the discovery
+ * parameters used), so discover_attributes() instead waits out the settle
+ * window once, up front, before ever attempting the first discovery
+ * request on a freshly established connection.
+ *
+ * Hardware testing showed this settle window is not perfectly bounded -
+ * even a generous delay here does not guarantee success on every run, and
+ * occasional connection-level failures remain (tracked separately as
+ * intermittent hardware flakiness, not fixable at this layer). This delay
+ * is a best-effort mitigation that meaningfully improves the success rate
+ * without adding excessive latency to every connection. */
+        constexpr TickType_t BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS = pdMS_TO_TICKS(1000);
+
 /* Minimal, hand-authored LE-only stack configuration (single peripheral/
  * central connection, no bonding/pairing - see PRD "Connection topology"
  * decision). Later slices may extend GATT/advertising specific fields but
@@ -467,6 +493,7 @@ namespace ble_internal {
         _local_characteristic_count(0),
         _discovered_service_count(0),
         _discovery_current_service_index(-1),
+        _discovery_current_characteristic(nullptr),
         _discovery_sem(nullptr),
         _discovery_status(WICED_BT_GATT_SUCCESS),
         _gatt_op_sem(nullptr),
@@ -1158,6 +1185,18 @@ namespace ble_internal {
         return nullptr;
     }
 
+    BLECharacteristic * BLEAdapter::find_local_characteristic_by_cccd(uint16_t cccd_handle) const {
+        if (cccd_handle == 0) {
+            return nullptr;
+        }
+        for (int i = 0; i < _local_characteristic_count; i++) {
+            if (_local_characteristics[i] != nullptr && _local_characteristics[i]->_cccdHandle() == cccd_handle) {
+                return _local_characteristics[i];
+            }
+        }
+        return nullptr;
+    }
+
     void BLEAdapter::on_gatt_attribute_request(uint16_t conn_id, const void *p_attribute_request) {
         const wiced_bt_gatt_attribute_request_t *request =
             reinterpret_cast < const wiced_bt_gatt_attribute_request_t * > (p_attribute_request);
@@ -1166,37 +1205,68 @@ namespace ble_internal {
             case GATT_REQ_READ:
             case GATT_REQ_READ_BLOB: {
                 uint16_t handle = request->data.read_req.handle;
-                BLECharacteristic *characteristic = find_local_characteristic(handle);
-                if (characteristic == nullptr) {
-                    wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_HANDLE);
-                    return;
-                }
                 uint16_t offset = request->data.read_req.offset;
-                int valueLength = characteristic->valueLength();
-                if (offset > valueLength) {
-                    wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_OFFSET);
+                BLECharacteristic *characteristic = find_local_characteristic(handle);
+                if (characteristic != nullptr) {
+                    int valueLength = characteristic->valueLength();
+                    if (offset > valueLength) {
+                        wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_OFFSET);
+                        return;
+                    }
+                    wiced_bt_gatt_server_send_read_handle_rsp(conn_id, request->opcode,
+                        (uint16_t)(valueLength - offset),
+                        const_cast < uint8_t * > (characteristic->value()) + offset, nullptr);
                     return;
                 }
-                wiced_bt_gatt_server_send_read_handle_rsp(conn_id, request->opcode,
-                    (uint16_t)(valueLength - offset),
-                    const_cast < uint8_t * > (characteristic->value()) + offset, nullptr);
-                break;
+
+                characteristic = find_local_characteristic_by_cccd(handle);
+                if (characteristic != nullptr) {
+                    uint16_t cccd_value = characteristic->subscribed()
+                        ? ((characteristic->properties() & BLENotify) ? GATT_CLIENT_CONFIG_NOTIFICATION : GATT_CLIENT_CONFIG_INDICATION)
+                        : GATT_CLIENT_CONFIG_NONE;
+                    uint8_t cccd_bytes[2] = { (uint8_t)(cccd_value & 0xFF), (uint8_t)((cccd_value >> 8) & 0xFF) };
+                    if (offset > sizeof(cccd_bytes)) {
+                        wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_OFFSET);
+                        return;
+                    }
+                    wiced_bt_gatt_server_send_read_handle_rsp(conn_id, request->opcode,
+                        (uint16_t)(sizeof(cccd_bytes) - offset), cccd_bytes + offset, nullptr);
+                    return;
+                }
+
+                wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_HANDLE);
+                return;
             }
             case GATT_REQ_WRITE:
             case GATT_CMD_WRITE: {
                 uint16_t handle = request->data.write_req.handle;
                 BLECharacteristic *characteristic = find_local_characteristic(handle);
-                if (characteristic == nullptr) {
+                if (characteristic != nullptr) {
+                    characteristic->_setValueFromPeer(request->data.write_req.p_val, request->data.write_req.val_len);
                     if (request->opcode == GATT_REQ_WRITE) {
-                        wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_HANDLE);
+                        wiced_bt_gatt_server_send_write_rsp(conn_id, request->opcode, handle);
                     }
                     return;
                 }
-                characteristic->_setValueFromPeer(request->data.write_req.p_val, request->data.write_req.val_len);
-                if (request->opcode == GATT_REQ_WRITE) {
-                    wiced_bt_gatt_server_send_write_rsp(conn_id, request->opcode, handle);
+
+                characteristic = find_local_characteristic_by_cccd(handle);
+                if (characteristic != nullptr) {
+                    uint16_t cccd_value = 0;
+                    if (request->data.write_req.val_len >= 2 && request->data.write_req.p_val != nullptr) {
+                        cccd_value = (uint16_t)(request->data.write_req.p_val[0]
+                            | ((uint16_t)request->data.write_req.p_val[1] << 8));
+                    }
+                    characteristic->_setSubscribed(cccd_value != GATT_CLIENT_CONFIG_NONE);
+                    if (request->opcode == GATT_REQ_WRITE) {
+                        wiced_bt_gatt_server_send_write_rsp(conn_id, request->opcode, handle);
+                    }
+                    return;
                 }
-                break;
+
+                if (request->opcode == GATT_REQ_WRITE) {
+                    wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_HANDLE);
+                }
+                return;
             }
             case GATT_REQ_MTU:
                 /* Central-initiated ATT MTU exchange, sent automatically by
@@ -1210,6 +1280,12 @@ namespace ble_internal {
                  * does) causes some peers (e.g. ArduinoBLE) to treat the
                  * connection as unusable and disconnect. */
                 wiced_bt_gatt_server_send_mtu_rsp(conn_id, request->data.remote_mtu, GATT_BLE_DEFAULT_MTU_SIZE);
+                break;
+            case GATT_HANDLE_VALUE_NOTIF:
+            case GATT_HANDLE_VALUE_IND:
+                /* Delivered as the send completion (notify) or peer
+                 * confirmation (indicate) of notify_characteristic_value();
+                 * this is an event, not a request, so no response is sent. */
                 break;
             default:
                 /* Execute-write/etc are not used by this library (no
@@ -1231,6 +1307,13 @@ namespace ble_internal {
         }
 
         free_discovered_services();
+
+        /* See BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS' comment: wait out the
+         * peer's connection-establishment settle window once, up front,
+         * rather than after a failed first attempt (which has been
+         * hardware-observed to wedge the underlying stack's GATT client
+         * context for the rest of the connection). */
+        vTaskDelay(BLE_ADAPTER_POST_CONNECT_SETTLE_TICKS);
 
         wiced_bt_gatt_discovery_param_t service_param = {};
         service_param.s_handle = 1;
@@ -1256,6 +1339,47 @@ namespace ble_internal {
             }
         }
         _discovery_current_service_index = -1;
+
+        /* Discover the CCCD (Client Characteristic Configuration
+         * Descriptor) of each notify/indicate characteristic found above,
+         * needed for subscribe()/unsubscribe() (see
+         * issues/006-notifications-subscriptions.md). A GATT characteristic
+         * declaration is always immediately followed by its value attribute
+         * (declaration handle + 1 == value handle, guaranteed by the Core
+         * Specification), so the next characteristic's declaration handle -
+         * and therefore this characteristic's descriptor range upper bound -
+         * can be derived from its value handle without this library having
+         * separately recorded declaration handles. */
+        for (int i = 0; i < _discovered_service_count; i++) {
+            BLEService *service = _discovered_services[i];
+            for (int c = 0; c < service->characteristicCount(); c++) {
+                BLECharacteristic *characteristic = service->characteristic(c);
+                if (characteristic == nullptr
+                    || !(characteristic->properties() & (BLENotify | BLEIndicate))) {
+                    continue;
+                }
+
+                uint16_t start_handle = (uint16_t)(characteristic->_valueHandle() + 1);
+                uint16_t end_handle = service->_endHandle();
+                BLECharacteristic *next = (c + 1 < service->characteristicCount())
+                    ? service->characteristic(c + 1) : nullptr;
+                if (next != nullptr && next->_valueHandle() >= 2) {
+                    end_handle = (uint16_t)(next->_valueHandle() - 2);
+                }
+                if (start_handle > end_handle) {
+                    continue;
+                }
+
+                wiced_bt_gatt_discovery_param_t descr_param = {};
+                descr_param.s_handle = start_handle;
+                descr_param.e_handle = end_handle;
+                _discovery_current_characteristic = characteristic;
+                if (!discover_blocking(GATT_DISCOVER_CHARACTERISTIC_DESCRIPTORS, &descr_param)) {
+                    all_ok = false;
+                }
+            }
+        }
+        _discovery_current_characteristic = nullptr;
 
         _last_error = all_ok ? BLE_ADAPTER_ERROR_NONE : BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
         return all_ok;
@@ -1317,11 +1441,14 @@ namespace ble_internal {
             characteristic->_setValueHandle(result->discovery_data.characteristic_declaration.val_handle);
             characteristic->_setRemote(true);
             service->addCharacteristic(*characteristic);
+        } else if (result->discovery_type == GATT_DISCOVER_CHARACTERISTIC_DESCRIPTORS) {
+            if (_discovery_current_characteristic != nullptr
+                && IS_CHAR_CLIENT_CONFIG_UUID(result->discovery_data.char_descr_info.type)) {
+                _discovery_current_characteristic->_setCccdHandle(result->discovery_data.char_descr_info.handle);
+            }
         }
-        /* GATT_DISCOVER_INCLUDED_SERVICES/GATT_DISCOVER_CHARACTERISTIC_DESCRIPTORS
-         * results are ignored: this library doesn't discover included
-         * services, and descriptor discovery (needed for subscribe/notify)
-         * is issues/006-notifications-subscriptions.md's scope. */
+        /* GATT_DISCOVER_INCLUDED_SERVICES results are ignored: this library
+         * doesn't discover included services. */
     }
 
     void BLEAdapter::on_gatt_discovery_complete(const void *p_discovery_complete) {
@@ -1337,10 +1464,32 @@ namespace ble_internal {
         const wiced_bt_gatt_operation_complete_t *complete =
             reinterpret_cast < const wiced_bt_gatt_operation_complete_t * > (p_operation_complete);
 
+        if (complete->op == GATTC_OPTYPE_NOTIFICATION || complete->op == GATTC_OPTYPE_INDICATION) {
+            /* Central role: an asynchronous notification/indication from a
+             * subscribed remote characteristic (see BLECharacteristic::
+             * subscribe()), rather than the completion of a blocking
+             * read/write_remote_characteristic() call - dispatch it
+             * directly instead of falling through to the semaphore-signal
+             * path below. */
+            uint16_t handle = complete->response_data.att_value.handle;
+            BLECharacteristic *characteristic = find_discovered_characteristic(handle);
+            if (characteristic != nullptr) {
+                characteristic->_setValueFromNotification(complete->response_data.att_value.p_data,
+                    complete->response_data.att_value.len);
+            }
+            if (complete->op == GATTC_OPTYPE_INDICATION) {
+                /* Indications (unlike notifications) require an explicit
+                 * confirmation back to the peer before it will send the
+                 * next one. */
+                wiced_bt_gatt_client_send_indication_confirm(complete->conn_id, handle);
+            }
+            return;
+        }
+
         if (complete->op != GATTC_OPTYPE_READ_HANDLE && complete->op != GATTC_OPTYPE_WRITE_WITH_RSP
             && complete->op != GATTC_OPTYPE_WRITE_NO_RSP) {
-            /* Discovery/config/notification completions are handled
-             * elsewhere (on_gatt_discovery_complete()) or ignored. */
+            /* Discovery/config completions are handled elsewhere
+             * (on_gatt_discovery_complete()) or ignored. */
             return;
         }
 
@@ -1449,6 +1598,36 @@ namespace ble_internal {
         return true;
     }
 
+    bool BLEAdapter::notify_characteristic_value(uint16_t value_handle, const uint8_t *value, int length,
+        bool indicate) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+        if (!_connected || _is_local_central) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_CONNECTED;
+            return false;
+        }
+        if (length < 0) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_FAILED;
+            return false;
+        }
+
+        wiced_bt_gatt_status_t status = indicate
+            ? wiced_bt_gatt_server_send_indication(_conn_id, value_handle, (uint16_t)length,
+            const_cast < uint8_t * > (value), nullptr)
+            : wiced_bt_gatt_server_send_notification(_conn_id, value_handle, (uint16_t)length,
+            const_cast < uint8_t * > (value), nullptr);
+
+        if (status != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
     int BLEAdapter::discovered_service_count() const {
         return _discovered_service_count;
     }
@@ -1467,6 +1646,22 @@ namespace ble_internal {
         for (int i = 0; i < _discovered_service_count; i++) {
             if (strcasecmp(_discovered_services[i]->uuid(), uuid) == 0) {
                 return _discovered_services[i];
+            }
+        }
+        return nullptr;
+    }
+
+    BLECharacteristic * BLEAdapter::find_discovered_characteristic(uint16_t value_handle) const {
+        for (int i = 0; i < _discovered_service_count; i++) {
+            BLEService *service = _discovered_services[i];
+            if (service == nullptr) {
+                continue;
+            }
+            for (int c = 0; c < service->characteristicCount(); c++) {
+                BLECharacteristic *characteristic = service->characteristic(c);
+                if (characteristic != nullptr && characteristic->_valueHandle() == value_handle) {
+                    return characteristic;
+                }
             }
         }
         return nullptr;
