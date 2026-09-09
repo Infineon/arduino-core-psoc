@@ -27,6 +27,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "../BLEService.h"
+#include "../BLECharacteristic.h"
+
 extern "C" {
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -60,6 +63,13 @@ namespace ble_internal {
         BLE_ADAPTER_ERROR_CONNECT_TIMEOUT,
         BLE_ADAPTER_ERROR_DISCONNECT_FAILED,
         BLE_ADAPTER_ERROR_DISCONNECT_TIMEOUT,
+        BLE_ADAPTER_ERROR_GATT_DB_REGISTER_FAILED,
+        BLE_ADAPTER_ERROR_DISCOVERY_FAILED,
+        BLE_ADAPTER_ERROR_DISCOVERY_TIMEOUT,
+        BLE_ADAPTER_ERROR_READ_FAILED,
+        BLE_ADAPTER_ERROR_READ_TIMEOUT,
+        BLE_ADAPTER_ERROR_WRITE_FAILED,
+        BLE_ADAPTER_ERROR_WRITE_TIMEOUT,
     } ble_adapter_error_t;
 
 /* Maximum number of advertised service UUIDs captured per scan result
@@ -180,6 +190,52 @@ namespace ble_internal {
          * call when not connected (returns true, no-op). */
         bool disconnect();
 
+        /* Peripheral role: registers 'services' (with their characteristics)
+         * as the local GATT server's attribute database, assigning each
+         * characteristic (and, for BLENotify/BLEIndicate characteristics,
+         * its CCCD) a GATT attribute handle via BLECharacteristic::
+         * _setValueHandle()/_setCccdHandle(). Must be called (once, from
+         * BLE::advertise()) before a central can discover/read/write this
+         * device's attributes. Returns false (see last_error()) if the
+         * adapter isn't initialized, a characteristic UUID couldn't be
+         * parsed, or the underlying btstack call fails. */
+        bool register_gatt_database(BLEService *const *services, int service_count);
+
+        /* Central role: performs a blocking discovery of all services and
+         * characteristics on the connected peer (bounded by an internal
+         * timeout per discovery step), replacing any previously discovered
+         * services. See BLEDevice::discoverAttributes(). Returns false (see
+         * last_error()) if not connected or the discovery fails/times out;
+         * services discovered before a mid-discovery failure remain
+         * queryable. */
+        bool discover_attributes();
+
+        /* Number of services discovered by the most recent
+         * discover_attributes() call. */
+        int discovered_service_count() const;
+
+        /* Returns the discovered service at 'index' (0 <= index <
+         * discovered_service_count()), or nullptr if out of range. */
+        BLEService * discovered_service(int index) const;
+
+        /* Returns the discovered service with the given UUID
+         * (case-insensitive), or nullptr if none matches. */
+        BLEService * find_discovered_service(const char *uuid) const;
+
+        /* Central role: performs a blocking GATT read of 'value_handle' on
+         * the connected peer directly into 'buffer' (bounded by an internal
+         * timeout). On success, sets 'out_length' to the number of bytes the
+         * peer responded with and returns true; returns false (see
+         * last_error()) if not connected or the read fails/times out. */
+        bool read_remote_characteristic(uint16_t value_handle, uint8_t *buffer, int buffer_length, int &out_length);
+
+        /* Central role: performs a blocking GATT write of 'value'
+         * (0 <= length <= the connected peer's negotiated MTU - 3) to
+         * 'value_handle' on the connected peer (bounded by an internal
+         * timeout). Returns false (see last_error()) if not connected or the
+         * write fails/times out. */
+        bool write_remote_characteristic(uint16_t value_handle, const uint8_t *value, int length);
+
         /* True if a GATT connection is currently established, in either
          * role. */
         bool is_connected() const {
@@ -230,12 +286,32 @@ namespace ble_internal {
 
         /* Called by the file-local wiced_bt_gatt_cback_t trampoline in the
          * .cpp (registered once with wiced_bt_gatt_register(), runs on the
-         * BLESS-IPC bt_task context) for every GATT event. This slice only
-         * handles GATT_CONNECTION_STATUS_EVT; unhandled events are ignored.
-         * Public so the trampoline (a plain C-linkage function, not a
-         * member) can call it, but not part of the intended sketch-facing
-         * API. */
+         * BLESS-IPC bt_task context) for every GATT event. Public so the
+         * trampoline (a plain C-linkage function, not a member) can call it,
+         * but not part of the intended sketch-facing API. */
         void on_gatt_connection_status(const void *p_connection_status);
+
+        /* Peripheral role: called for GATT_ATTRIBUTE_REQUEST_EVT (a
+         * connected central's read/write of the local GATT server
+         * registered via register_gatt_database()). Public for the
+         * trampoline; not part of the sketch-facing API. */
+        void on_gatt_attribute_request(uint16_t conn_id, const void *p_attribute_request);
+
+        /* Central role: called for GATT_DISCOVERY_RESULT_EVT (one
+         * discovered service or characteristic). Public for the trampoline;
+         * not part of the sketch-facing API. */
+        void on_gatt_discovery_result(const void *p_discovery_result);
+
+        /* Central role: called for GATT_DISCOVERY_CPLT_EVT (a
+         * discover_attributes() discovery step finished). Public for the
+         * trampoline; not part of the sketch-facing API. */
+        void on_gatt_discovery_complete(const void *p_discovery_complete);
+
+        /* Central role: called for GATT_OPERATION_CPLT_EVT (a
+         * read_remote_characteristic()/write_remote_characteristic()
+         * operation finished). Public for the trampoline; not part of the
+         * sketch-facing API. */
+        void on_gatt_operation_complete(const void *p_operation_complete);
 
     private:
         BLEAdapter();
@@ -246,6 +322,20 @@ namespace ble_internal {
         void push_event(ble_adapter_event_type_t type);
         void push_scan_result_event(const ble_adapter_scan_result_t &scan_result);
         void push_connection_event(ble_adapter_event_type_t type, const char *address, bool is_local_central);
+
+        /* Blocks (bounded by an internal timeout) until the discovery step
+         * started by wiced_bt_gatt_client_send_discover(conn_id, type,
+         * p_param) completes; discovery results are appended by
+         * on_gatt_discovery_result() as they arrive. Returns false on a
+         * send failure, timeout, or non-success discovery status. */
+        bool discover_blocking(uint8_t type, void *p_param);
+
+        /* Frees the BLEService/BLECharacteristic objects allocated by a
+         * previous discover_attributes() call (if any) and resets the
+         * discovered-service table. Called at the start of
+         * discover_attributes() and on disconnect (discovered handles are
+         * only valid for the connection they were discovered on). */
+        void free_discovered_services();
 
         volatile bool _initialized;
         volatile bool _stack_init_started; /* wiced_bt_stack_init succeeded; enable event may still be pending */
@@ -299,6 +389,69 @@ namespace ble_internal {
          * is not undone by deinit() since (like the BLESS-IPC stack itself)
          * it is not restart-safe. */
         bool _gatt_registered;
+
+        /* True once wiced_bt_gatt_db_init() has accepted the local attribute
+         * table. The vendor stack keeps that table for its process lifetime,
+         * so later advertise() calls must reuse it rather than register it
+         * again. */
+        bool _gatt_db_registered;
+
+        /* Maximum number of locally-registered characteristics (across all
+         * services passed to register_gatt_database()) this adapter can
+         * dispatch GATT_ATTRIBUTE_REQUEST_EVT reads/writes to by handle.
+         * Mirrors BLEClass::MAX_SERVICES * BLEService::MAX_CHARACTERISTICS. */
+        static const int MAX_LOCAL_CHARACTERISTICS = 32;
+
+        /* Flat table of every characteristic passed to
+         * register_gatt_database(), indexed by nothing in particular - just
+         * linearly searched by value handle when a
+         * GATT_ATTRIBUTE_REQUEST_EVT arrives. Not owned (owned by the
+         * sketch's BLEService/BLECharacteristic objects). */
+        BLECharacteristic *_local_characteristics[MAX_LOCAL_CHARACTERISTICS];
+        int _local_characteristic_count;
+
+        /* Backing storage for the raw GATT database byte array passed to
+         * wiced_bt_gatt_db_init(), built by register_gatt_database(). Must
+         * remain valid for as long as the database is registered (i.e. for
+         * the process lifetime - wiced_bt_gatt_db_init(), like
+         * wiced_bt_gatt_register(), isn't meant to be re-run per
+         * begin()/end() cycle). */
+        static const int GATT_DB_BUFFER_SIZE = 2048;
+        uint8_t _gatt_db_buffer[GATT_DB_BUFFER_SIZE];
+
+        BLECharacteristic * find_local_characteristic(uint16_t value_handle) const;
+
+        /* Maximum number of services/characteristics-per-service this
+         * adapter can hold from a single discover_attributes() call.
+         * Mirrors BLEClass::MAX_SERVICES/BLEService::MAX_CHARACTERISTICS. */
+        static const int MAX_DISCOVERED_SERVICES = 4;
+
+        /* Heap-allocated by discover_attributes() (via
+         * on_gatt_discovery_result()), freed by free_discovered_services().
+         * See discovered_service()/find_discovered_service(). */
+        BLEService *_discovered_services[MAX_DISCOVERED_SERVICES];
+        int _discovered_service_count;
+
+        /* Set by discover_attributes() before requesting a
+         * GATT_DISCOVER_CHARACTERISTICS discovery step, so
+         * on_gatt_discovery_result() knows which discovered service to
+         * append newly discovered characteristics to. -1 while discovering
+         * services (GATT_DISCOVER_SERVICES_ALL). */
+        int _discovery_current_service_index;
+
+        /* Used only to make discover_blocking() synchronous: signaled by
+         * on_gatt_discovery_complete() when the corresponding discovery
+         * step finishes. */
+        SemaphoreHandle_t _discovery_sem;
+        uint8_t _discovery_status; /* wiced_bt_gatt_status_t, cached by on_gatt_discovery_complete() */
+
+        /* Used only to make read_remote_characteristic()/
+         * write_remote_characteristic() synchronous: signaled by
+         * on_gatt_operation_complete() when the corresponding client
+         * operation finishes. */
+        SemaphoreHandle_t _gatt_op_sem;
+        uint8_t _gatt_op_status; /* wiced_bt_gatt_status_t, cached by on_gatt_operation_complete() */
+        uint16_t _gatt_op_result_len; /* Response length, valid for read_remote_characteristic() */
     };
 
 } // namespace ble_internal

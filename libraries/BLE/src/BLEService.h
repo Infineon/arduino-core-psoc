@@ -42,11 +42,27 @@ public:
      * or nullptr if out of range. */
     BLECharacteristic * characteristic(int index) const;
 
+    /* Returns the characteristic with the given UUID (16-bit or 128-bit
+     * UUID string, case-insensitive), or nullptr if this service has none
+     * with that UUID. */
+    BLECharacteristic * characteristic(const char *uuid) const;
+
+    /* Internal-use only: the GATT attribute handle range ([start, end])
+     * assigned to this service, set by BLEDevice::discoverAttributes()
+     * (central role) when this service was discovered on a connected
+     * peripheral. Not part of the sketch-facing API. Meaningless (both 0)
+     * for a locally-declared service (peripheral role). */
+    void _setHandleRange(uint16_t startHandle, uint16_t endHandle);
+    uint16_t _startHandle() const;
+    uint16_t _endHandle() const;
+
 private:
 
     char _uuid[37]; /* Fits a 128-bit UUID string ("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\0"). */
     BLECharacteristic *_characteristics[MAX_CHARACTERISTICS];
     int _characteristicCount;
+    uint16_t _startHandleField;
+    uint16_t _endHandleField;
 };
 
 #endif /* BLE_SERVICE_H */

@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+class BLEService;
+
 /**
  * A remote BLE peer: either a peripheral discovered by BLE.scan() (and
  * retrieved one at a time via BLE.available()), or the connected central
@@ -82,6 +84,28 @@ public:
     /* True if this device is the currently connected peer (in either
      * role). */
     bool connected() const;
+
+    /* Central role only: performs a blocking GATT discovery of all
+     * services and characteristics exposed by this device (which must be
+     * the currently connected peer, i.e. connected() == true). Populates
+     * the results returned by service()/serviceCount(). A repeated call
+     * discards any previously discovered services/characteristics.
+     * Returns false on failure/timeout (see BLE.lastError()); some
+     * services may still have been partially discovered. */
+    bool discoverAttributes();
+
+    /* Number of services discovered by the most recent discoverAttributes()
+     * call. */
+    int serviceCount() const;
+
+    /* Returns the discovered service at 'index' (0 <= index <
+     * serviceCount()), or nullptr if out of range. */
+    BLEService * service(int index) const;
+
+    /* Returns the discovered service with the given UUID (16-bit or
+     * 128-bit UUID string, case-insensitive), or nullptr if
+     * discoverAttributes() found none with that UUID. */
+    BLEService * service(const char *uuid) const;
 
     /* Internal-use only: fills in this BLEDevice's fields from a scan
      * result. Not part of the sketch-facing API; only BLEClass calls this

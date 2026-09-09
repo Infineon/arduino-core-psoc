@@ -1,6 +1,7 @@
 #include "BLEDevice.h"
 
 #include "BLE.h"
+#include "BLEService.h"
 #include "internal/ble_adapter.h"
 
 #include <string.h>
@@ -82,6 +83,25 @@ bool BLEDevice::connected() const {
     ble_internal::BLEAdapter &adapter = ble_internal::BLEAdapter::instance();
     return hasAddress() && adapter.is_connected()
            && strcasecmp(adapter.connected_address(), _address) == 0;
+}
+
+bool BLEDevice::discoverAttributes() {
+    if (!connected()) {
+        return false;
+    }
+    return BLE._reportConnectionResult(ble_internal::BLEAdapter::instance().discover_attributes());
+}
+
+int BLEDevice::serviceCount() const {
+    return ble_internal::BLEAdapter::instance().discovered_service_count();
+}
+
+BLEService * BLEDevice::service(int index) const {
+    return ble_internal::BLEAdapter::instance().discovered_service(index);
+}
+
+BLEService * BLEDevice::service(const char *uuid) const {
+    return ble_internal::BLEAdapter::instance().find_discovered_service(uuid);
 }
 
 void BLEDevice::_setAddress(const char *address) {

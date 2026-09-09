@@ -50,6 +50,17 @@ namespace {
             case ble_internal::BLE_ADAPTER_ERROR_DISCONNECT_FAILED:
             case ble_internal::BLE_ADAPTER_ERROR_DISCONNECT_TIMEOUT:
                 return BLE_ERROR_DISCONNECT_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_GATT_DB_REGISTER_FAILED:
+                return BLE_ERROR_GATT_REGISTER_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_DISCOVERY_FAILED:
+            case ble_internal::BLE_ADAPTER_ERROR_DISCOVERY_TIMEOUT:
+                return BLE_ERROR_DISCOVERY_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_READ_FAILED:
+            case ble_internal::BLE_ADAPTER_ERROR_READ_TIMEOUT:
+                return BLE_ERROR_READ_FAILED;
+            case ble_internal::BLE_ADAPTER_ERROR_WRITE_FAILED:
+            case ble_internal::BLE_ADAPTER_ERROR_WRITE_TIMEOUT:
+                return BLE_ERROR_WRITE_FAILED;
             default:
                 return BLE_ERROR_UNKNOWN;
         }
@@ -149,6 +160,17 @@ bool BLEClass::addService(BLEService &service) {
 bool BLEClass::advertise(const char *localName, const char *serviceUuid) {
     if (!_active) {
         _last_error = BLE_ERROR_NOT_INITIALIZED;
+        return false;
+    }
+
+    /* Registers the GATT server's attribute database (from the services
+     * added via addService()) so a connecting central can discover/read/
+     * write this device's characteristics; see
+     * issues/005-gatt-discovery-read-write.md. Safe to skip when no
+     * services were added (e.g. a sketch that only wants to be discovered,
+     * not connected to). */
+    if (_serviceCount > 0 && !BLEAdapter::instance().register_gatt_database(_services, _serviceCount)) {
+        _last_error = map_adapter_error(BLEAdapter::instance().last_error());
         return false;
     }
 

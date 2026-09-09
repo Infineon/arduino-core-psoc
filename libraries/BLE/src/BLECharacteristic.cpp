@@ -1,14 +1,17 @@
 #include "BLECharacteristic.h"
+#include "internal/ble_adapter.h"
 
 #include <string.h>
 
 BLECharacteristic::BLECharacteristic(const char *uuid, uint8_t properties, int valueSize)
     : _properties(properties),
-      _value(nullptr),
-      _valueSize(valueSize > 0 ? valueSize : 1),
-      _valueLength(0),
-      _valueHandleField(0),
-      _cccdHandleField(0) {
+    _value(nullptr),
+    _valueSize(valueSize > 0 ? valueSize : 1),
+    _valueLength(0),
+    _valueHandleField(0),
+    _cccdHandleField(0),
+    _remote(false),
+    _written(false) {
     _uuid[0] = '\0';
     if (uuid != nullptr) {
         strncpy(_uuid, uuid, sizeof(_uuid) - 1);
@@ -48,6 +51,14 @@ int BLECharacteristic::readValue(uint8_t *buffer, int length) const {
         return 0;
     }
 
+    if (_remote) {
+        int bytesRead = 0;
+        if (!ble_internal::BLEAdapter::instance().read_remote_characteristic(_valueHandleField, buffer, length, bytesRead)) {
+            return 0;
+        }
+        return bytesRead;
+    }
+
     int copyLength = (length < _valueLength) ? length : _valueLength;
     memcpy(buffer, _value, copyLength);
     return copyLength;
@@ -58,11 +69,29 @@ bool BLECharacteristic::writeValue(const uint8_t *value, int length) {
         return false;
     }
 
+    if (_remote) {
+        if (!ble_internal::BLEAdapter::instance().write_remote_characteristic(_valueHandleField, value, length)) {
+            return false;
+        }
+    }
+
     if (length > 0 && value != nullptr) {
         memcpy(_value, value, length);
     }
     _valueLength = length;
     return true;
+}
+
+bool BLECharacteristic::written() {
+    if (!_written) {
+        return false;
+    }
+    _written = false;
+    return true;
+}
+
+bool BLECharacteristic::isRemote() const {
+    return _remote;
 }
 
 bool BLECharacteristic::writeValue(const char *value) {
@@ -86,4 +115,22 @@ void BLECharacteristic::_setCccdHandle(uint16_t handle) {
 
 uint16_t BLECharacteristic::_cccdHandle() const {
     return _cccdHandleField;
+}
+
+void BLECharacteristic::_setRemote(bool remote) {
+    _remote = remote;
+}
+
+void BLECharacteristic::_setValueFromPeer(const uint8_t *value, int length) {
+    if (length < 0) {
+        return;
+    }
+    if (length > _valueSize) {
+        length = _valueSize;
+    }
+    if (length > 0 && value != nullptr) {
+        memcpy(_value, value, length);
+    }
+    _valueLength = length;
+    _written = true;
 }

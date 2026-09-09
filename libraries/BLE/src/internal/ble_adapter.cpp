@@ -23,9 +23,11 @@ namespace ble_internal {
 
     namespace {
 
-/* Maximum raw advertising elements this adapter builds: flags + local name +
- * one advertised service UUID. */
-        constexpr uint8_t BLE_ADAPTER_MAX_ADVERT_ELEMENTS = 3;
+/* Maximum raw advertising elements this adapter builds: flags + one
+ * advertised service UUID. The local name is placed in the scan response
+ * so a 128-bit service UUID cannot overflow legacy advertising's 31-byte
+ * payload limit. */
+        constexpr uint8_t BLE_ADAPTER_MAX_ADVERT_ELEMENTS = 2;
 
 /* Parses a hex nibble; returns -1 for non-hex characters. */
         int hex_nibble(char c) {
@@ -155,6 +157,108 @@ namespace ble_internal {
             }
 
             return false;
+        }
+
+/* Formats a wiced_bt_gatt discovery UUID (as returned in discovery results
+ * for services/characteristics) into a lowercase human-readable UUID
+ * string, using the same over-the-air byte convention as
+ * format_uuid_bytes() above (wiced_bt_uuid_t.uu.uuid128 is stored in that
+ * same wire order). 'out' must be at least 37 bytes. */
+        bool format_wiced_uuid(const wiced_bt_uuid_t &uuid, char *out, size_t out_size) {
+            if (uuid.len == LEN_UUID_16) {
+                uint8_t air_bytes[2] = { (uint8_t)(uuid.uu.uuid16 & 0xFF), (uint8_t)((uuid.uu.uuid16 >> 8) & 0xFF) };
+                return format_uuid_bytes(air_bytes, 2, out, out_size);
+            }
+            if (uuid.len == LEN_UUID_128) {
+                return format_uuid_bytes(uuid.uu.uuid128, 16, out, out_size);
+            }
+            if (out_size > 0) {
+                out[0] = '\0';
+            }
+            return false;
+        }
+
+/* Cursor-based byte appenders used by gatt_db_append_service()/
+ * gatt_db_append_characteristic() below to build the raw GATT database
+ * byte array passed to wiced_bt_gatt_db_init(), matching the byte layout
+ * the vendor SDK's PRIMARY_SERVICE_UUID16/128 and
+ * CHARACTERISTIC_UUID16/128_WRITABLE macros (wiced_bt_gatt.h) would
+ * produce for a static initializer - reproduced here byte-for-byte since
+ * this library builds the database at runtime (from sketch-registered
+ * BLEService/BLECharacteristic objects) rather than at compile time. */
+        void gatt_db_write_u8(uint8_t *buf, int &idx, uint8_t v) {
+            buf[idx++] = v;
+        }
+
+        void gatt_db_write_u16(uint8_t *buf, int &idx, uint16_t v) {
+            buf[idx++] = (uint8_t)(v & 0xFF);
+            buf[idx++] = (uint8_t)((v >> 8) & 0xFF);
+        }
+
+        void gatt_db_write_bytes(uint8_t *buf, int &idx, const uint8_t *data, uint8_t len) {
+            memcpy(buf + idx, data, len);
+            idx += len;
+        }
+
+/* Appends a PRIMARY_SERVICE_UUID16/128 declaration attribute. */
+        void gatt_db_append_service(uint8_t *buf, int &idx, uint16_t handle,
+            const uint8_t *uuid, uint8_t uuid_len) {
+            gatt_db_write_u16(buf, idx, handle);
+            gatt_db_write_u8(buf, idx, GATTDB_PERM_READABLE);
+            gatt_db_write_u8(buf, idx, (uint8_t)(2 + uuid_len));
+            gatt_db_write_u16(buf, idx, GATT_UUID_PRI_SERVICE);
+            gatt_db_write_bytes(buf, idx, uuid, uuid_len);
+        }
+
+/* Appends a CHARACTERISTIC_UUID16_WRITABLE/128_WRITABLE declaration +
+ * value attribute pair. The value attribute's own bytes are an unused
+ * placeholder (as in the vendor macros): this library always serves reads/
+ * writes for its own characteristics via GATT_ATTRIBUTE_REQUEST_EVT (see
+ * BLEAdapter::on_gatt_attribute_request()), looking the current value up
+ * from the corresponding BLECharacteristic by handle rather than from the
+ * database bytes themselves. */
+        void gatt_db_append_characteristic(uint8_t *buf, int &idx, uint16_t decl_handle, uint16_t value_handle,
+            const uint8_t *uuid, uint8_t uuid_len, uint8_t properties, uint8_t permission) {
+            gatt_db_write_u16(buf, idx, decl_handle);
+            gatt_db_write_u8(buf, idx, GATTDB_PERM_READABLE);
+            gatt_db_write_u8(buf, idx, (uint8_t)(2 + 1 + 2 + uuid_len));
+            gatt_db_write_u16(buf, idx, GATT_UUID_CHAR_DECLARE);
+            gatt_db_write_u8(buf, idx, properties);
+            gatt_db_write_u16(buf, idx, value_handle);
+            gatt_db_write_bytes(buf, idx, uuid, uuid_len);
+
+            uint8_t value_permission = permission;
+            if (uuid_len == GATTDB_UUID128_SIZE) {
+                value_permission |= GATTDB_PERM_SERVICE_UUID_128;
+            }
+            gatt_db_write_u16(buf, idx, value_handle);
+            gatt_db_write_u8(buf, idx, value_permission);
+            gatt_db_write_u8(buf, idx, uuid_len);
+            if (uuid_len == GATTDB_UUID128_SIZE) {
+                /* The 128-bit vendor macro includes a reserved byte in the
+                 * value record; the 16-bit form does not. */
+                gatt_db_write_u8(buf, idx, 0);
+            }
+            gatt_db_write_bytes(buf, idx, uuid, uuid_len);
+        }
+
+/* Appends a CHAR_DESCRIPTOR_UUID16_WRITABLE declaration for the Client
+ * Characteristic Configuration Descriptor (used to track subscribe state
+ * for BLENotify/BLEIndicate characteristics; the value itself, like
+ * characteristic values above, is served via GATT_ATTRIBUTE_REQUEST_EVT
+ * rather than the database bytes - see
+ * BLEAdapter::on_gatt_attribute_request()'s find_local_characteristic_by_cccd()
+ * handling). Uses GATTDB_PERM_WRITE_REQ/_WRITE_CMD directly rather than the
+ * GATTDB_PERM_WRITABLE macro, which also sets GATTDB_PERM_AUTH_WRITABLE -
+ * that bit makes the stack's built-in permission check silently reject the
+ * write before it ever reaches the app callback, since this library never
+ * pairs/encrypts the link (security_required = 0, see PRD). */
+        void gatt_db_append_cccd(uint8_t *buf, int &idx, uint16_t handle) {
+            gatt_db_write_u16(buf, idx, handle);
+            gatt_db_write_u8(buf, idx, GATTDB_PERM_READABLE | GATTDB_PERM_WRITE_REQ | GATTDB_PERM_WRITE_CMD);
+            gatt_db_write_u8(buf, idx, GATTDB_UUID16_SIZE);
+            gatt_db_write_u8(buf, idx, 0);
+            gatt_db_write_u16(buf, idx, GATT_UUID_CHAR_CLIENT_CONFIG);
         }
 
 /* Scans 'adv_data' for every occurrence of the 16-/128-bit service UUID list
@@ -315,19 +419,35 @@ namespace ble_internal {
 
 /*
  * Registered directly with wiced_bt_gatt_register(). Runs on the
- * BLESS-IPC bt_task context for every GATT event; forwards
- * GATT_CONNECTION_STATUS_EVT to BLEAdapter's public
- * on_gatt_connection_status(), which only updates the (volatile) connection
- * state, pushes a fixed-size event into the thread-safe queue, and signals
- * the connection semaphore. No other application state is touched here.
+ * BLESS-IPC bt_task context for every GATT event; forwards each to the
+ * corresponding BLEAdapter handler, which only updates internal state,
+ * pushes fixed-size events into the thread-safe queue, and/or signals the
+ * relevant semaphore. No other application state is touched here.
  */
     static wiced_bt_gatt_status_t ble_adapter_gatt_callback(wiced_bt_gatt_evt_t event,
         wiced_bt_gatt_event_data_t *p_event_data) {
-        if (event == GATT_CONNECTION_STATUS_EVT) {
-            BLEAdapter::instance().on_gatt_connection_status(&p_event_data->connection_status);
+        switch (event) {
+            case GATT_CONNECTION_STATUS_EVT:
+                BLEAdapter::instance().on_gatt_connection_status(&p_event_data->connection_status);
+                break;
+            case GATT_ATTRIBUTE_REQUEST_EVT:
+                BLEAdapter::instance().on_gatt_attribute_request(
+                    p_event_data->attribute_request.conn_id, &p_event_data->attribute_request);
+                break;
+            case GATT_DISCOVERY_RESULT_EVT:
+                BLEAdapter::instance().on_gatt_discovery_result(&p_event_data->discovery_result);
+                break;
+            case GATT_DISCOVERY_CPLT_EVT:
+                BLEAdapter::instance().on_gatt_discovery_complete(&p_event_data->discovery_complete);
+                break;
+            case GATT_OPERATION_CPLT_EVT:
+                BLEAdapter::instance().on_gatt_operation_complete(&p_event_data->operation_complete);
+                break;
+            default:
+                /* Other event types (congestion, buffer lifecycle) have
+                 * nothing to do here yet. */
+                break;
         }
-        /* Other event types (attribute discovery/read/write/notify) have
-         * nothing to do here yet; later slices (005/006) extend this. */
         return WICED_BT_GATT_SUCCESS;
     }
 
@@ -342,13 +462,29 @@ namespace ble_internal {
         _is_local_central(false),
         _conn_id(0),
         _connection_sem(nullptr),
-        _gatt_registered(false) {
+        _gatt_registered(false),
+        _gatt_db_registered(false),
+        _local_characteristic_count(0),
+        _discovered_service_count(0),
+        _discovery_current_service_index(-1),
+        _discovery_sem(nullptr),
+        _discovery_status(WICED_BT_GATT_SUCCESS),
+        _gatt_op_sem(nullptr),
+        _gatt_op_status(WICED_BT_GATT_SUCCESS),
+        _gatt_op_result_len(0) {
         _scan_service_uuid_filter[0] = '\0';
         _peer_address[0] = '\0';
         _connecting_address[0] = '\0';
+        for (int i = 0; i < MAX_LOCAL_CHARACTERISTICS; i++) {
+            _local_characteristics[i] = nullptr;
+        }
+        for (int i = 0; i < MAX_DISCOVERED_SERVICES; i++) {
+            _discovered_services[i] = nullptr;
+        }
     }
 
     BLEAdapter::~BLEAdapter() {
+        free_discovered_services();
         if (_event_queue != nullptr) {
             vQueueDelete(_event_queue);
         }
@@ -357,6 +493,12 @@ namespace ble_internal {
         }
         if (_connection_sem != nullptr) {
             vSemaphoreDelete(_connection_sem);
+        }
+        if (_discovery_sem != nullptr) {
+            vSemaphoreDelete(_discovery_sem);
+        }
+        if (_gatt_op_sem != nullptr) {
+            vSemaphoreDelete(_gatt_op_sem);
         }
     }
 
@@ -398,6 +540,22 @@ namespace ble_internal {
         if (_connection_sem == nullptr) {
             _connection_sem = xSemaphoreCreateBinary();
             if (_connection_sem == nullptr) {
+                _last_error = BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED;
+                return false;
+            }
+        }
+
+        if (_discovery_sem == nullptr) {
+            _discovery_sem = xSemaphoreCreateBinary();
+            if (_discovery_sem == nullptr) {
+                _last_error = BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED;
+                return false;
+            }
+        }
+
+        if (_gatt_op_sem == nullptr) {
+            _gatt_op_sem = xSemaphoreCreateBinary();
+            if (_gatt_op_sem == nullptr) {
                 _last_error = BLE_ADAPTER_ERROR_SEMAPHORE_CREATE_FAILED;
                 return false;
             }
@@ -778,6 +936,9 @@ namespace ble_internal {
             push_connection_event(BLE_ADAPTER_EVENT_DISCONNECTED, address, _is_local_central);
             _peer_address[0] = '\0';
             _is_local_central = false;
+            /* Discovered attribute handles are only valid for the
+             * connection they were discovered on. */
+            free_discovered_services();
         }
 
         _connecting_address[0] = '\0';
@@ -811,17 +972,6 @@ namespace ble_internal {
         elems[elem_count].p_data = &flags;
         elem_count++;
 
-        size_t name_len = 0;
-        if (params.local_name != nullptr) {
-            name_len = strlen(params.local_name);
-        }
-        if (name_len > 0) {
-            elems[elem_count].advert_type = BTM_BLE_ADVERT_TYPE_NAME_COMPLETE;
-            elems[elem_count].len = (uint16_t)name_len;
-            elems[elem_count].p_data = (uint8_t *)params.local_name;
-            elem_count++;
-        }
-
         uint8_t service_uuid_bytes[16];
         uint8_t service_uuid_len = 0;
         bool have_service_uuid = params.service_uuid != nullptr && params.service_uuid[0] != '\0';
@@ -839,6 +989,28 @@ namespace ble_internal {
         }
 
         if (wiced_bt_ble_set_raw_advertisement_data(elem_count, elems) != WICED_BT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_ADVERTISE_DATA_FAILED;
+            return false;
+        }
+
+        wiced_bt_ble_advert_elem_t scan_response_elem;
+        uint8_t scan_response_count = 0;
+        size_t name_len = params.local_name == nullptr ? 0 : strlen(params.local_name);
+        if (name_len > 0) {
+            constexpr size_t MAX_SCAN_RESPONSE_NAME_LENGTH = 29;
+            bool name_is_complete = name_len <= MAX_SCAN_RESPONSE_NAME_LENGTH;
+            if (!name_is_complete) {
+                name_len = MAX_SCAN_RESPONSE_NAME_LENGTH;
+            }
+            scan_response_elem.advert_type = name_is_complete
+                ? BTM_BLE_ADVERT_TYPE_NAME_COMPLETE
+                : BTM_BLE_ADVERT_TYPE_NAME_SHORT;
+            scan_response_elem.len = (uint16_t)name_len;
+            scan_response_elem.p_data = (uint8_t *)params.local_name;
+            scan_response_count = 1;
+        }
+        if (wiced_bt_ble_set_raw_scan_response_data(scan_response_count,
+            scan_response_count == 0 ? nullptr : &scan_response_elem) != WICED_BT_SUCCESS) {
             _last_error = BLE_ADAPTER_ERROR_ADVERTISE_DATA_FAILED;
             return false;
         }
@@ -874,6 +1046,446 @@ namespace ble_internal {
         if (_lifecycle_sem != nullptr) {
             xSemaphoreGive(_lifecycle_sem);
         }
+    }
+
+    bool BLEAdapter::register_gatt_database(BLEService *const *services, int service_count) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        if (_gatt_db_registered) {
+            _last_error = BLE_ADAPTER_ERROR_NONE;
+            return true;
+        }
+
+        /* Generous per-entry byte bounds (see gatt_db_append_service()/
+         * gatt_db_append_characteristic()/gatt_db_append_cccd() above), sized
+         * for the worst case (128-bit UUIDs) so the exact arithmetic of each
+         * attribute's byte layout doesn't need to be re-derived here. */
+        constexpr int SERVICE_ENTRY_MAX_BYTES = 32;
+        constexpr int CHARACTERISTIC_ENTRY_MAX_BYTES = 64;
+        constexpr int CCCD_ENTRY_MAX_BYTES = 16;
+
+        int idx = 0;
+        uint16_t next_handle = 1;
+        _local_characteristic_count = 0;
+
+        for (int s = 0; s < service_count; s++) {
+            BLEService *service = services[s];
+            if (service == nullptr) {
+                continue;
+            }
+
+            uint8_t service_uuid[16];
+            uint8_t service_uuid_len = 0;
+            if (!parse_uuid(service->uuid(), service_uuid, service_uuid_len)) {
+                _last_error = BLE_ADAPTER_ERROR_INVALID_UUID;
+                return false;
+            }
+            if (idx + SERVICE_ENTRY_MAX_BYTES > GATT_DB_BUFFER_SIZE) {
+                _last_error = BLE_ADAPTER_ERROR_GATT_DB_REGISTER_FAILED;
+                return false;
+            }
+            gatt_db_append_service(_gatt_db_buffer, idx, next_handle++, service_uuid, service_uuid_len);
+
+            for (int c = 0; c < service->characteristicCount(); c++) {
+                BLECharacteristic *characteristic = service->characteristic(c);
+                if (characteristic == nullptr) {
+                    continue;
+                }
+
+                uint8_t char_uuid[16];
+                uint8_t char_uuid_len = 0;
+                if (!parse_uuid(characteristic->uuid(), char_uuid, char_uuid_len)) {
+                    _last_error = BLE_ADAPTER_ERROR_INVALID_UUID;
+                    return false;
+                }
+                if (idx + CHARACTERISTIC_ENTRY_MAX_BYTES > GATT_DB_BUFFER_SIZE
+                    || _local_characteristic_count >= MAX_LOCAL_CHARACTERISTICS) {
+                    _last_error = BLE_ADAPTER_ERROR_GATT_DB_REGISTER_FAILED;
+                    return false;
+                }
+
+                uint8_t properties = characteristic->properties();
+                uint8_t permission = GATTDB_PERM_NONE;
+                if (properties & (BLERead | BLENotify | BLEIndicate)) {
+                    permission |= GATTDB_PERM_READABLE;
+                }
+                if (properties & BLEWrite) {
+                    permission |= GATTDB_PERM_WRITE_REQ;
+                }
+                if (properties & BLEWriteWithoutResponse) {
+                    permission |= GATTDB_PERM_WRITE_CMD;
+                }
+
+                uint16_t decl_handle = next_handle++;
+                uint16_t value_handle = next_handle++;
+                gatt_db_append_characteristic(_gatt_db_buffer, idx, decl_handle, value_handle,
+                    char_uuid, char_uuid_len, properties, permission);
+                characteristic->_setValueHandle(value_handle);
+                characteristic->_setRemote(false);
+                _local_characteristics[_local_characteristic_count++] = characteristic;
+
+                if (properties & (BLENotify | BLEIndicate)) {
+                    if (idx + CCCD_ENTRY_MAX_BYTES > GATT_DB_BUFFER_SIZE) {
+                        _last_error = BLE_ADAPTER_ERROR_GATT_DB_REGISTER_FAILED;
+                        return false;
+                    }
+                    uint16_t cccd_handle = next_handle++;
+                    gatt_db_append_cccd(_gatt_db_buffer, idx, cccd_handle);
+                    characteristic->_setCccdHandle(cccd_handle);
+                }
+            }
+        }
+
+        if (wiced_bt_gatt_db_init(_gatt_db_buffer, (uint16_t)idx, nullptr) != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_GATT_DB_REGISTER_FAILED;
+            return false;
+        }
+
+        _gatt_db_registered = true;
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    BLECharacteristic * BLEAdapter::find_local_characteristic(uint16_t value_handle) const {
+        for (int i = 0; i < _local_characteristic_count; i++) {
+            if (_local_characteristics[i] != nullptr && _local_characteristics[i]->_valueHandle() == value_handle) {
+                return _local_characteristics[i];
+            }
+        }
+        return nullptr;
+    }
+
+    void BLEAdapter::on_gatt_attribute_request(uint16_t conn_id, const void *p_attribute_request) {
+        const wiced_bt_gatt_attribute_request_t *request =
+            reinterpret_cast < const wiced_bt_gatt_attribute_request_t * > (p_attribute_request);
+
+        switch (request->opcode) {
+            case GATT_REQ_READ:
+            case GATT_REQ_READ_BLOB: {
+                uint16_t handle = request->data.read_req.handle;
+                BLECharacteristic *characteristic = find_local_characteristic(handle);
+                if (characteristic == nullptr) {
+                    wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_HANDLE);
+                    return;
+                }
+                uint16_t offset = request->data.read_req.offset;
+                int valueLength = characteristic->valueLength();
+                if (offset > valueLength) {
+                    wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_OFFSET);
+                    return;
+                }
+                wiced_bt_gatt_server_send_read_handle_rsp(conn_id, request->opcode,
+                    (uint16_t)(valueLength - offset),
+                    const_cast < uint8_t * > (characteristic->value()) + offset, nullptr);
+                break;
+            }
+            case GATT_REQ_WRITE:
+            case GATT_CMD_WRITE: {
+                uint16_t handle = request->data.write_req.handle;
+                BLECharacteristic *characteristic = find_local_characteristic(handle);
+                if (characteristic == nullptr) {
+                    if (request->opcode == GATT_REQ_WRITE) {
+                        wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, handle, WICED_BT_GATT_INVALID_HANDLE);
+                    }
+                    return;
+                }
+                characteristic->_setValueFromPeer(request->data.write_req.p_val, request->data.write_req.val_len);
+                if (request->opcode == GATT_REQ_WRITE) {
+                    wiced_bt_gatt_server_send_write_rsp(conn_id, request->opcode, handle);
+                }
+                break;
+            }
+            case GATT_REQ_MTU:
+                /* Central-initiated ATT MTU exchange, sent automatically by
+                 * most GATT clients (including ArduinoBLE) right after
+                 * connecting, before any subsequent GATT operation (e.g. a
+                 * subscribe() CCCD write). This library keeps the fixed
+                 * default MTU (see PRD/BLECharacteristic's 20-byte default
+                 * value size, sized for GATT_BLE_DEFAULT_MTU_SIZE - 3 ATT
+                 * header bytes), but must still answer the request -
+                 * leaving it unhandled (as the catch-all default below
+                 * does) causes some peers (e.g. ArduinoBLE) to treat the
+                 * connection as unusable and disconnect. */
+                wiced_bt_gatt_server_send_mtu_rsp(conn_id, request->data.remote_mtu, GATT_BLE_DEFAULT_MTU_SIZE);
+                break;
+            default:
+                /* Execute-write/etc are not used by this library (no
+                 * reliable writes - see PRD); politely decline anything
+                 * else the peer requests. */
+                wiced_bt_gatt_server_send_error_rsp(conn_id, request->opcode, 0, WICED_BT_GATT_REQ_NOT_SUPPORTED);
+                break;
+        }
+    }
+
+    bool BLEAdapter::discover_attributes() {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+        if (!_connected) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_CONNECTED;
+            return false;
+        }
+
+        free_discovered_services();
+
+        wiced_bt_gatt_discovery_param_t service_param = {};
+        service_param.s_handle = 1;
+        service_param.e_handle = 0xFFFF;
+        _discovery_current_service_index = -1;
+        if (!discover_blocking(GATT_DISCOVER_SERVICES_ALL, &service_param)) {
+            return false;
+        }
+
+        /* Discover the characteristics of each service found above. A
+         * failure discovering one service's characteristics doesn't abort
+         * the whole pass - services/characteristics discovered so far
+         * remain queryable via service()/characteristic(). */
+        bool all_ok = true;
+        for (int i = 0; i < _discovered_service_count; i++) {
+            BLEService *service = _discovered_services[i];
+            wiced_bt_gatt_discovery_param_t char_param = {};
+            char_param.s_handle = service->_startHandle();
+            char_param.e_handle = service->_endHandle();
+            _discovery_current_service_index = i;
+            if (!discover_blocking(GATT_DISCOVER_CHARACTERISTICS, &char_param)) {
+                all_ok = false;
+            }
+        }
+        _discovery_current_service_index = -1;
+
+        _last_error = all_ok ? BLE_ADAPTER_ERROR_NONE : BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
+        return all_ok;
+    }
+
+    bool BLEAdapter::discover_blocking(uint8_t type, void *p_param) {
+        wiced_bt_gatt_discovery_param_t *param = reinterpret_cast < wiced_bt_gatt_discovery_param_t * > (p_param);
+
+        /* Drain any stale signal from a previous discovery step. */
+        xSemaphoreTake(_discovery_sem, 0);
+        _discovery_status = WICED_BT_GATT_SUCCESS;
+
+        if (wiced_bt_gatt_client_send_discover(_conn_id, (wiced_bt_gatt_discovery_type_t)type, param)
+            != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
+            return false;
+        }
+
+        if (xSemaphoreTake(_discovery_sem, BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS) != pdTRUE) {
+            _last_error = BLE_ADAPTER_ERROR_DISCOVERY_TIMEOUT;
+            return false;
+        }
+
+        if (_discovery_status != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_DISCOVERY_FAILED;
+            return false;
+        }
+
+        return true;
+    }
+
+    void BLEAdapter::on_gatt_discovery_result(const void *p_discovery_result) {
+        const wiced_bt_gatt_discovery_result_t *result =
+            reinterpret_cast < const wiced_bt_gatt_discovery_result_t * > (p_discovery_result);
+
+        if (result->discovery_type == GATT_DISCOVER_SERVICES_ALL) {
+            if (_discovered_service_count >= MAX_DISCOVERED_SERVICES) {
+                return;
+            }
+            char uuid[37];
+            format_wiced_uuid(result->discovery_data.group_value.service_type, uuid, sizeof(uuid));
+            BLEService *service = new BLEService(uuid);
+            service->_setHandleRange(result->discovery_data.group_value.s_handle,
+                result->discovery_data.group_value.e_handle);
+            _discovered_services[_discovered_service_count++] = service;
+        } else if (result->discovery_type == GATT_DISCOVER_CHARACTERISTICS) {
+            if (_discovery_current_service_index < 0
+                || _discovery_current_service_index >= _discovered_service_count) {
+                return;
+            }
+            BLEService *service = _discovered_services[_discovery_current_service_index];
+            if (service->characteristicCount() >= BLEService::MAX_CHARACTERISTICS) {
+                return;
+            }
+            char uuid[37];
+            format_wiced_uuid(result->discovery_data.characteristic_declaration.char_uuid, uuid, sizeof(uuid));
+            BLECharacteristic *characteristic = new BLECharacteristic(uuid,
+                result->discovery_data.characteristic_declaration.characteristic_properties);
+            characteristic->_setValueHandle(result->discovery_data.characteristic_declaration.val_handle);
+            characteristic->_setRemote(true);
+            service->addCharacteristic(*characteristic);
+        }
+        /* GATT_DISCOVER_INCLUDED_SERVICES/GATT_DISCOVER_CHARACTERISTIC_DESCRIPTORS
+         * results are ignored: this library doesn't discover included
+         * services, and descriptor discovery (needed for subscribe/notify)
+         * is issues/006-notifications-subscriptions.md's scope. */
+    }
+
+    void BLEAdapter::on_gatt_discovery_complete(const void *p_discovery_complete) {
+        const wiced_bt_gatt_discovery_complete_t *complete =
+            reinterpret_cast < const wiced_bt_gatt_discovery_complete_t * > (p_discovery_complete);
+        _discovery_status = complete->status;
+        if (_discovery_sem != nullptr) {
+            xSemaphoreGive(_discovery_sem);
+        }
+    }
+
+    void BLEAdapter::on_gatt_operation_complete(const void *p_operation_complete) {
+        const wiced_bt_gatt_operation_complete_t *complete =
+            reinterpret_cast < const wiced_bt_gatt_operation_complete_t * > (p_operation_complete);
+
+        if (complete->op != GATTC_OPTYPE_READ_HANDLE && complete->op != GATTC_OPTYPE_WRITE_WITH_RSP
+            && complete->op != GATTC_OPTYPE_WRITE_NO_RSP) {
+            /* Discovery/config/notification completions are handled
+             * elsewhere (on_gatt_discovery_complete()) or ignored. */
+            return;
+        }
+
+        _gatt_op_status = complete->status;
+        _gatt_op_result_len = complete->response_data.att_value.len;
+        if (_gatt_op_sem != nullptr) {
+            xSemaphoreGive(_gatt_op_sem);
+        }
+    }
+
+    bool BLEAdapter::read_remote_characteristic(uint16_t value_handle, uint8_t *buffer, int buffer_length,
+        int &out_length) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+        if (!_connected) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_CONNECTED;
+            return false;
+        }
+        if (buffer == nullptr || buffer_length <= 0) {
+            _last_error = BLE_ADAPTER_ERROR_READ_FAILED;
+            return false;
+        }
+
+        /* Drain any stale signal from a previous GATT client operation. */
+        xSemaphoreTake(_gatt_op_sem, 0);
+        _gatt_op_status = WICED_BT_GATT_SUCCESS;
+        _gatt_op_result_len = 0;
+
+        if (wiced_bt_gatt_client_send_read_handle(_conn_id, value_handle, 0, buffer, (uint16_t)buffer_length,
+            GATT_AUTH_REQ_NONE) != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_READ_FAILED;
+            return false;
+        }
+
+        if (xSemaphoreTake(_gatt_op_sem, BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS) != pdTRUE) {
+            _last_error = BLE_ADAPTER_ERROR_READ_TIMEOUT;
+            return false;
+        }
+
+        if (_gatt_op_status != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_READ_FAILED;
+            return false;
+        }
+
+        out_length = _gatt_op_result_len;
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    bool BLEAdapter::write_remote_characteristic(uint16_t value_handle, const uint8_t *value, int length) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+        if (!_connected) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_CONNECTED;
+            return false;
+        }
+        if (length < 0) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_FAILED;
+            return false;
+        }
+
+        /* wiced_bt_gatt_client_send_write() requires the write buffer to
+         * remain valid until the operation completes; since this call
+         * blocks until then, a stack-local copy (bounded by the configured
+         * max RX PDU size - see ble_cfg.ble_max_rx_pdu_size above) is safe. */
+        uint8_t local_buffer[251];
+        if ((size_t)length > sizeof(local_buffer)) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_FAILED;
+            return false;
+        }
+        if (length > 0 && value != nullptr) {
+            memcpy(local_buffer, value, length);
+        }
+
+        wiced_bt_gatt_write_hdr_t hdr;
+        hdr.handle = value_handle;
+        hdr.offset = 0;
+        hdr.len = (uint16_t)length;
+        hdr.auth_req = GATT_AUTH_REQ_NONE;
+
+        /* Drain any stale signal from a previous GATT client operation. */
+        xSemaphoreTake(_gatt_op_sem, 0);
+        _gatt_op_status = WICED_BT_GATT_SUCCESS;
+
+        if (wiced_bt_gatt_client_send_write(_conn_id, GATT_REQ_WRITE, &hdr, local_buffer, nullptr)
+            != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_FAILED;
+            return false;
+        }
+
+        if (xSemaphoreTake(_gatt_op_sem, BLE_ADAPTER_CONNECTION_TIMEOUT_TICKS) != pdTRUE) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_TIMEOUT;
+            return false;
+        }
+
+        if (_gatt_op_status != WICED_BT_GATT_SUCCESS) {
+            _last_error = BLE_ADAPTER_ERROR_WRITE_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    int BLEAdapter::discovered_service_count() const {
+        return _discovered_service_count;
+    }
+
+    BLEService * BLEAdapter::discovered_service(int index) const {
+        if (index < 0 || index >= _discovered_service_count) {
+            return nullptr;
+        }
+        return _discovered_services[index];
+    }
+
+    BLEService * BLEAdapter::find_discovered_service(const char *uuid) const {
+        if (uuid == nullptr) {
+            return nullptr;
+        }
+        for (int i = 0; i < _discovered_service_count; i++) {
+            if (strcasecmp(_discovered_services[i]->uuid(), uuid) == 0) {
+                return _discovered_services[i];
+            }
+        }
+        return nullptr;
+    }
+
+    void BLEAdapter::free_discovered_services() {
+        for (int i = 0; i < _discovered_service_count; i++) {
+            BLEService *service = _discovered_services[i];
+            if (service == nullptr) {
+                continue;
+            }
+            for (int c = 0; c < service->characteristicCount(); c++) {
+                delete service->characteristic(c);
+            }
+            delete service;
+            _discovered_services[i] = nullptr;
+        }
+        _discovered_service_count = 0;
+        _discovery_current_service_index = -1;
     }
 
 } // namespace ble_internal

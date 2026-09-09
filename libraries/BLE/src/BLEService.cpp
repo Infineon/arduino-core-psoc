@@ -1,9 +1,10 @@
 #include "BLEService.h"
 
 #include <string.h>
+#include <strings.h>
 
 BLEService::BLEService(const char *uuid)
-    : _characteristicCount(0) {
+    : _characteristicCount(0), _startHandleField(0), _endHandleField(0) {
     _uuid[0] = '\0';
     if (uuid != nullptr) {
         strncpy(_uuid, uuid, sizeof(_uuid) - 1);
@@ -37,4 +38,29 @@ BLECharacteristic * BLEService::characteristic(int index) const {
         return nullptr;
     }
     return _characteristics[index];
+}
+
+BLECharacteristic * BLEService::characteristic(const char *uuid) const {
+    if (uuid == nullptr) {
+        return nullptr;
+    }
+    for (int i = 0; i < _characteristicCount; i++) {
+        if (strcasecmp(_characteristics[i]->uuid(), uuid) == 0) {
+            return _characteristics[i];
+        }
+    }
+    return nullptr;
+}
+
+void BLEService::_setHandleRange(uint16_t startHandle, uint16_t endHandle) {
+    _startHandleField = startHandle;
+    _endHandleField = endHandle;
+}
+
+uint16_t BLEService::_startHandle() const {
+    return _startHandleField;
+}
+
+uint16_t BLEService::_endHandle() const {
+    return _endHandleField;
 }
