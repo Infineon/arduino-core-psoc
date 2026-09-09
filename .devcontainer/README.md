@@ -39,7 +39,7 @@ bash .devcontainer/scripts/dev-setup.sh
 The container bootstrap runs the following scripts in order:
 
 1. **`scripts/git-setup.sh`** — Verifies Git is available and working.
-2. **`scripts/usb-set-kitprog3.sh`** — Configures USB permissions for KitProg3 programmers (Cypress/Infineon boards).
+2. **`scripts/usb-set-usb-permissions.sh`** — Configures USB permissions for KitProg3 programmers (Cypress/Infineon boards) and Arduino Uno boards.
 3. **`scripts/usb-check.sh`** — Diagnoses USB device visibility (serial ports and USB bus access).
 4. **`scripts/dev-setup.sh`** — Runs core setup, checks Arduino CLI, and links the repo as a local Arduino core.
 

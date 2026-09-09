@@ -12,6 +12,9 @@
     }
   },
   "privileged": true,
+  "containerEnv": {
+    "ARDUINO_DIRECTORIES_DATA": "/opt/.arduino15"
+  },
   "mounts": [
     "source=/dev,target=/dev,type=bind",
     "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
@@ -25,7 +28,9 @@
       "extensions": [
         "ms-vscode.cpptools",
         "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff"
       ]
     }
   }

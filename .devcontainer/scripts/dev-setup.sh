@@ -10,9 +10,21 @@ echo "[devcontainer] Running core setup..."
 bash tools/dev-setup.sh
 
 arduino-cli version
-# Link the repo into Arduino's hardware directory so it can be used as a local core
-sketchbook_dir="$(arduino-cli config get directories.user)"
-arduino_git_dir="${sketchbook_dir}/hardware/arduino-git"
-mkdir -p "$arduino_git_dir"
-ln -sfn "$repo_root" "$arduino_git_dir/psoc6"
-echo "[devcontainer] Linked $arduino_git_dir/psoc6 -> $repo_root"
+
+# Replace the installed core with this checkout while retaining its installed version.
+psoc6_version="$(arduino-cli core list | awk '$1 == "infineon:psoc6" { print $2; exit }')"
+if [[ -z "$psoc6_version" ]]; then
+	echo "[devcontainer] infineon:psoc6 is not installed" >&2
+	exit 1
+fi
+
+arduino_data_dir="$(arduino-cli config get directories.data)"
+installed_core_dir="${arduino_data_dir}/packages/infineon/hardware/psoc6/${psoc6_version}"
+if [[ ! -d "$installed_core_dir" ]]; then
+	echo "[devcontainer] Installed core directory not found: $installed_core_dir" >&2
+	exit 1
+fi
+
+sudo rm -rf "$installed_core_dir"
+sudo ln -s "$repo_root" "$installed_core_dir"
+echo "[devcontainer] Linked $installed_core_dir -> $repo_root"
