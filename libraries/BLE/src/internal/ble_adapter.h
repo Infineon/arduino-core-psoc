@@ -51,7 +51,13 @@ namespace ble_internal {
         BLE_ADAPTER_ERROR_INVALID_UUID,
         BLE_ADAPTER_ERROR_ADVERTISE_DATA_FAILED,
         BLE_ADAPTER_ERROR_ADVERTISE_START_FAILED,
+        BLE_ADAPTER_ERROR_SCAN_START_FAILED,
+        BLE_ADAPTER_ERROR_SCAN_STOP_FAILED,
     } ble_adapter_error_t;
+
+/* Maximum number of advertised service UUIDs captured per scan result
+ * event (mirrors BLEDevice::MAX_ADVERTISED_SERVICE_UUIDS). */
+    constexpr int BLE_ADAPTER_MAX_SCAN_SERVICE_UUIDS = 4;
 
 /* Parameters for start_advertising(). local_name/service_uuid may be
  * nullptr or empty to omit that field from the advertising payload.
@@ -62,17 +68,32 @@ namespace ble_internal {
         const char *service_uuid;
     } ble_adapter_advert_params_t;
 
+/* One discovered peripheral's data, captured from its advertising/scan
+ * response packet(s) at the moment it was seen. Kept as fixed-size buffers
+ * (no heap/pointers into transient btstack buffers) so it can be copied by
+ * value into the event queue below. */
+    typedef struct {
+        char address[18]; /* "AA:BB:CC:DD:EE:FF\0" */
+        int8_t rssi;
+        char local_name[32];
+        char service_uuids[BLE_ADAPTER_MAX_SCAN_SERVICE_UUIDS][37];
+        uint8_t service_uuid_count;
+    } ble_adapter_scan_result_t;
+
 /* Events queued by btstack callbacks (bt_task context) for later draining
- * by BLE.poll() (sketch task context). Kept intentionally minimal for the
- * scaffold/lifecycle slice; later slices extend this enum/struct (e.g. with
- * connection handles, attribute handles, characteristic values, ...). */
+ * by BLE.poll() (sketch task context). Later slices extend this
+ * enum/struct further (e.g. with connection handles, attribute handles,
+ * characteristic values, ...). */
     typedef enum {
         BLE_ADAPTER_EVENT_STACK_ENABLED = 0,
         BLE_ADAPTER_EVENT_STACK_DISABLED,
+        BLE_ADAPTER_EVENT_SCAN_RESULT,
     } ble_adapter_event_type_t;
 
     typedef struct {
         ble_adapter_event_type_t type;
+        /* Valid only when type == BLE_ADAPTER_EVENT_SCAN_RESULT. */
+        ble_adapter_scan_result_t scan_result;
     } ble_adapter_event_t;
 
     class BLEAdapter {
@@ -107,6 +128,18 @@ namespace ble_internal {
          * even if advertising was never started. */
         bool stop_advertising();
 
+        /* Starts continuous LE scanning. Each discovered advertising packet
+         * is queued as a BLE_ADAPTER_EVENT_SCAN_RESULT event for pop_event()
+         * to drain. When 'service_uuid_filter' is non-null/non-empty, only
+         * advertisements that include that service UUID are queued. Returns
+         * false (see last_error()) if the adapter isn't initialized or the
+         * underlying btstack call fails. */
+        bool start_scan(const char *service_uuid_filter);
+
+        /* Stops scanning started by start_scan(). Safe to call even if
+         * scanning was never started. */
+        bool stop_scan();
+
         bool is_initialized() const {
             return _initialized;
         }
@@ -123,6 +156,17 @@ namespace ble_internal {
         void on_stack_enabled();
         void on_stack_disabled();
 
+        /* Called by the file-local wiced_bt_ble_scan_result_cback_t
+         * trampoline in the .cpp (registered with wiced_bt_ble_scan(), runs
+         * on the BLESS-IPC bt_task context) for every discovered
+         * advertising/scan-response packet. Public so the trampoline (a
+         * plain C-linkage function, not a member) can call it, but not part
+         * of the intended sketch-facing API. p_scan_result/p_adv_data are
+         * NULL when btstack signals the end of a bounded scan; that is
+         * ignored here since scanning is otherwise continuous until
+         * stop_scan(). */
+        void on_scan_result(const void *p_scan_result, const uint8_t *p_adv_data);
+
     private:
         BLEAdapter();
         ~BLEAdapter();
@@ -130,10 +174,27 @@ namespace ble_internal {
         BLEAdapter & operator = (const BLEAdapter &) = delete;
 
         void push_event(ble_adapter_event_type_t type);
+        void push_scan_result_event(const ble_adapter_scan_result_t &scan_result);
 
         volatile bool _initialized;
         volatile bool _stack_init_started; /* wiced_bt_stack_init succeeded; enable event may still be pending */
         ble_adapter_error_t _last_error;
+
+        /* Optional service UUID filter set by start_scan(); empty means "no
+         * filter, queue every discovered device". */
+        char _scan_service_uuid_filter[37];
+
+        /* Active scanning elicits separate ADV_IND (flags/service UUIDs) and
+         * SCAN_RSP (often the local name, e.g. ArduinoBLE's setLocalName())
+         * reports for the same scannable peripheral. This single-slot cache
+         * holds the most recent ADV_IND awaiting its SCAN_RSP so the two can
+         * be merged into one BLEDevice before being queued; only one scan
+         * result is normally in flight between consecutive controller
+         * events, which is sufficient for this library's scan volume. */
+        ble_adapter_scan_result_t _pending_scan_result;
+        bool _pending_scan_result_valid;
+
+        void maybe_queue_scan_result(const ble_adapter_scan_result_t &scan_result);
 
         QueueHandle_t _event_queue;
 

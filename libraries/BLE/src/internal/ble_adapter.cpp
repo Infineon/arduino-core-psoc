@@ -15,6 +15,8 @@ extern "C" {
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <strings.h>
 
 namespace ble_internal {
 
@@ -98,6 +100,66 @@ namespace ble_internal {
             return false;
         }
 
+/* Formats a device address (6 raw bytes, over-the-air/wiced order) as
+ * "AA:BB:CC:DD:EE:FF" into 'out' (must be at least 18 bytes). */
+        void format_address(const uint8_t *addr, char *out, size_t out_size) {
+            snprintf(out, out_size, "%02X:%02X:%02X:%02X:%02X:%02X",
+                addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+        }
+
+/* Formats a UUID's over-the-air bytes (as returned by
+ * wiced_bt_ble_check_advertising_data(), little-endian for 16-bit, reversed
+ * textual order for 128-bit - see parse_uuid() above for the inverse
+ * mapping) back into a lowercase human-readable UUID string. 'byte_len'
+ * must be 2 or 16; 'out' must be at least 37 bytes. Returns false for any
+ * other byte_len. */
+        bool format_uuid_bytes(const uint8_t *air_bytes, uint8_t byte_len, char *out, size_t out_size) {
+            if (byte_len == 2) {
+                snprintf(out, out_size, "%02x%02x", air_bytes[1], air_bytes[0]);
+                return true;
+            }
+
+            if (byte_len == 16) {
+                uint8_t big_endian_bytes[16];
+                for (int i = 0; i < 16; i++) {
+                    big_endian_bytes[i] = air_bytes[15 - i];
+                }
+                snprintf(out, out_size,
+                    "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                    big_endian_bytes[0], big_endian_bytes[1], big_endian_bytes[2], big_endian_bytes[3],
+                    big_endian_bytes[4], big_endian_bytes[5],
+                    big_endian_bytes[6], big_endian_bytes[7],
+                    big_endian_bytes[8], big_endian_bytes[9],
+                    big_endian_bytes[10], big_endian_bytes[11], big_endian_bytes[12],
+                    big_endian_bytes[13], big_endian_bytes[14], big_endian_bytes[15]);
+                return true;
+            }
+
+            return false;
+        }
+
+/* Scans 'adv_data' for every occurrence of the 16-/128-bit service UUID list
+ * advertising data type 'ad_type' (which may pack multiple 'uuid_byte_len'
+ * -sized UUIDs back to back) and appends each as a formatted string to
+ * 'result', bounded by BLE_ADAPTER_MAX_SCAN_SERVICE_UUIDS. */
+        void append_service_uuids(const uint8_t *adv_data, wiced_bt_ble_advert_type_t ad_type,
+            uint8_t uuid_byte_len, ble_adapter_scan_result_t &result) {
+            uint8_t length = 0;
+            uint8_t *data = wiced_bt_ble_check_advertising_data(const_cast < uint8_t * > (adv_data), ad_type, &length);
+            if (data == nullptr) {
+                return;
+            }
+
+            for (uint8_t offset = 0; offset + uuid_byte_len <= length
+                 && result.service_uuid_count < BLE_ADAPTER_MAX_SCAN_SERVICE_UUIDS;
+                 offset += uuid_byte_len) {
+                format_uuid_bytes(data + offset, uuid_byte_len,
+                    result.service_uuids[result.service_uuid_count],
+                    sizeof(result.service_uuids[result.service_uuid_count]));
+                result.service_uuid_count++;
+            }
+        }
+
 /* Bounds how long init()/deinit() block waiting for the corresponding
  * BTM_ENABLED_EVT/BTM_DISABLED_EVT to arrive from the bt_task. */
         constexpr TickType_t BLE_ADAPTER_LIFECYCLE_TIMEOUT_TICKS = pdMS_TO_TICKS(5000);
@@ -108,7 +170,13 @@ namespace ble_internal {
  * decision). Later slices may extend GATT/advertising specific fields but
  * should not need to touch the lifecycle-critical fields below. */
         const wiced_bt_cfg_ble_scan_settings_t ble_scan_cfg = {
-            .scan_mode = BTM_BLE_SCAN_MODE_PASSIVE,
+            /* Active scanning is required (not passive) so the controller
+             * sends SCAN_REQ and captures SCAN_RSP packets - many peripherals
+             * (including ArduinoBLE, via BLELocalDevice::setLocalName())
+             * place the advertised local name in the scan response rather
+             * than the primary advertising data, so passive scanning would
+             * never observe it. */
+            .scan_mode = BTM_BLE_SCAN_MODE_ACTIVE,
             .high_duty_scan_interval = WICED_BT_CFG_DEFAULT_HIGH_DUTY_SCAN_INTERVAL,
             .high_duty_scan_window = WICED_BT_CFG_DEFAULT_HIGH_DUTY_SCAN_WINDOW,
             .high_duty_scan_duration = 5,
@@ -208,12 +276,26 @@ namespace ble_internal {
         return WICED_BT_SUCCESS;
     }
 
+/*
+ * Registered directly with wiced_bt_ble_scan(). Runs on the BLESS-IPC
+ * bt_task context for every discovered advertising/scan-response packet;
+ * forwards to BLEAdapter's public on_scan_result(), which only builds a
+ * fixed-size event and pushes it into the thread-safe queue. No other
+ * application state is touched here.
+ */
+    static void ble_adapter_scan_result_callback(wiced_bt_ble_scan_results_t *p_scan_result,
+        uint8_t *p_adv_data) {
+        BLEAdapter::instance().on_scan_result(p_scan_result, p_adv_data);
+    }
+
     BLEAdapter::BLEAdapter()
         : _initialized(false),
         _stack_init_started(false),
         _last_error(BLE_ADAPTER_ERROR_NONE),
+        _pending_scan_result_valid(false),
         _event_queue(nullptr),
         _lifecycle_sem(nullptr) {
+        _scan_service_uuid_filter[0] = '\0';
     }
 
     BLEAdapter::~BLEAdapter() {
@@ -327,6 +409,186 @@ namespace ble_internal {
             xQueueReceive(_event_queue, &dropped, 0);
             xQueueSend(_event_queue, &event, 0);
         }
+    }
+
+    void BLEAdapter::push_scan_result_event(const ble_adapter_scan_result_t &scan_result) {
+        if (_event_queue == nullptr) {
+            return;
+        }
+        ble_adapter_event_t event;
+        event.type = BLE_ADAPTER_EVENT_SCAN_RESULT;
+        event.scan_result = scan_result;
+        /* Called from the bt_task context; never blocks the caller. If the
+         * queue is momentarily full the oldest, not-yet-drained event is
+         * dropped rather than stalling the BT stack task. */
+        if (xQueueSend(_event_queue, &event, 0) != pdTRUE) {
+            ble_adapter_event_t dropped;
+            xQueueReceive(_event_queue, &dropped, 0);
+            xQueueSend(_event_queue, &event, 0);
+        }
+    }
+
+    void BLEAdapter::maybe_queue_scan_result(const ble_adapter_scan_result_t &scan_result) {
+        if (_scan_service_uuid_filter[0] != '\0') {
+            bool matches_filter = false;
+            for (uint8_t i = 0; i < scan_result.service_uuid_count; i++) {
+                if (strcasecmp(scan_result.service_uuids[i], _scan_service_uuid_filter) == 0) {
+                    matches_filter = true;
+                    break;
+                }
+            }
+            if (!matches_filter) {
+                return;
+            }
+        }
+
+        push_scan_result_event(scan_result);
+    }
+
+    void BLEAdapter::on_scan_result(const void *p_scan_result, const uint8_t *p_adv_data) {
+        /* NULL signals the end of a bounded scan; scanning here is otherwise
+         * continuous until stop_scan(), so there is nothing to do. */
+        if (p_scan_result == nullptr) {
+            return;
+        }
+
+        const wiced_bt_ble_scan_results_t *result =
+            reinterpret_cast < const wiced_bt_ble_scan_results_t * > (p_scan_result);
+
+        ble_adapter_scan_result_t scan_result;
+        format_address(result->remote_bd_addr, scan_result.address, sizeof(scan_result.address));
+        scan_result.rssi = result->rssi;
+        scan_result.local_name[0] = '\0';
+        scan_result.service_uuid_count = 0;
+
+        if (p_adv_data != nullptr) {
+            uint8_t name_len = 0;
+            uint8_t *name = wiced_bt_ble_check_advertising_data(const_cast < uint8_t * > (p_adv_data),
+                BTM_BLE_ADVERT_TYPE_NAME_COMPLETE, &name_len);
+            if (name == nullptr) {
+                name = wiced_bt_ble_check_advertising_data(const_cast < uint8_t * > (p_adv_data),
+                    BTM_BLE_ADVERT_TYPE_NAME_SHORT, &name_len);
+            }
+            if (name != nullptr && name_len > 0) {
+                uint8_t copy_len = (name_len < sizeof(scan_result.local_name) - 1)
+                    ? name_len : (uint8_t)(sizeof(scan_result.local_name) - 1);
+                memcpy(scan_result.local_name, name, copy_len);
+                scan_result.local_name[copy_len] = '\0';
+            }
+
+            append_service_uuids(p_adv_data, BTM_BLE_ADVERT_TYPE_16SRV_COMPLETE, 2, scan_result);
+            append_service_uuids(p_adv_data, BTM_BLE_ADVERT_TYPE_16SRV_PARTIAL, 2, scan_result);
+            append_service_uuids(p_adv_data, BTM_BLE_ADVERT_TYPE_128SRV_COMPLETE, 16, scan_result);
+            append_service_uuids(p_adv_data, BTM_BLE_ADVERT_TYPE_128SRV_PARTIAL, 16, scan_result);
+        }
+
+        /* With active scanning, a scannable peripheral's local name (e.g.
+         * ArduinoBLE's BLE.setLocalName(), which places it in the scan
+         * response - see BLELocalDevice::setLocalName()) typically arrives
+         * in a separate SCAN_RSP report from the ADV_IND report carrying
+         * flags/service UUIDs. Merge the two by address into a single
+         * BLEDevice rather than surfacing two incomplete records. */
+        if (result->ble_evt_type == BTM_BLE_EVT_SCAN_RSP) {
+            if (_pending_scan_result_valid &&
+                strcasecmp(_pending_scan_result.address, scan_result.address) == 0) {
+                /* Fill in whatever the pending ADV_IND report didn't have. */
+                if (_pending_scan_result.local_name[0] == '\0' && scan_result.local_name[0] != '\0') {
+                    strncpy(_pending_scan_result.local_name, scan_result.local_name,
+                        sizeof(_pending_scan_result.local_name) - 1);
+                    _pending_scan_result.local_name[sizeof(_pending_scan_result.local_name) - 1] = '\0';
+                }
+                for (uint8_t i = 0; i < scan_result.service_uuid_count &&
+                     _pending_scan_result.service_uuid_count < BLE_ADAPTER_MAX_SCAN_SERVICE_UUIDS; i++) {
+                    bool already_present = false;
+                    for (uint8_t j = 0; j < _pending_scan_result.service_uuid_count; j++) {
+                        if (strcasecmp(_pending_scan_result.service_uuids[j], scan_result.service_uuids[i]) == 0) {
+                            already_present = true;
+                            break;
+                        }
+                    }
+                    if (!already_present) {
+                        strncpy(_pending_scan_result.service_uuids[_pending_scan_result.service_uuid_count],
+                            scan_result.service_uuids[i], sizeof(_pending_scan_result.service_uuids[0]) - 1);
+                        _pending_scan_result.service_uuid_count++;
+                    }
+                }
+                maybe_queue_scan_result(_pending_scan_result);
+                _pending_scan_result_valid = false;
+                return;
+            }
+
+            /* A SCAN_RSP with no matching pending ADV_IND (e.g. it arrived
+             * out of order, or the ADV_IND wasn't scannable per its event
+             * type) - surface what this report alone contains rather than
+             * dropping it. */
+            maybe_queue_scan_result(scan_result);
+            return;
+        }
+
+        bool is_scannable = (result->ble_evt_type == BTM_BLE_EVT_CONNECTABLE_ADVERTISEMENT) ||
+            (result->ble_evt_type == BTM_BLE_EVT_CONNECTABLE_DIRECTED_ADVERTISEMENT) ||
+            (result->ble_evt_type == BTM_BLE_EVT_SCANNABLE_ADVERTISEMENT);
+
+        if (is_scannable) {
+            /* A previous pending entry that never got its matching SCAN_RSP
+             * (e.g. the peripheral didn't respond) would otherwise be lost
+             * silently - surface it now, before it's overwritten. */
+            if (_pending_scan_result_valid) {
+                maybe_queue_scan_result(_pending_scan_result);
+            }
+            _pending_scan_result = scan_result;
+            _pending_scan_result_valid = true;
+            return;
+        }
+
+        /* Non-connectable advertisement: no scan response will ever
+         * follow, so queue immediately. */
+        maybe_queue_scan_result(scan_result);
+    }
+
+
+    bool BLEAdapter::start_scan(const char *service_uuid_filter) {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        if (service_uuid_filter != nullptr && service_uuid_filter[0] != '\0') {
+            strncpy(_scan_service_uuid_filter, service_uuid_filter, sizeof(_scan_service_uuid_filter) - 1);
+            _scan_service_uuid_filter[sizeof(_scan_service_uuid_filter) - 1] = '\0';
+        } else {
+            _scan_service_uuid_filter[0] = '\0';
+        }
+
+        _pending_scan_result_valid = false;
+
+        /* wiced_bt_ble_scan() returns WICED_BT_PENDING (not WICED_BT_SUCCESS)
+         * when the scan request has been successfully queued to the
+         * controller - only actual failure codes indicate a real error. */
+        wiced_result_t result = wiced_bt_ble_scan(BTM_BLE_SCAN_TYPE_LOW_DUTY, WICED_TRUE, ble_adapter_scan_result_callback);
+        if (result != WICED_BT_SUCCESS && result != WICED_BT_PENDING) {
+            _last_error = BLE_ADAPTER_ERROR_SCAN_START_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
+    }
+
+    bool BLEAdapter::stop_scan() {
+        if (!_initialized) {
+            _last_error = BLE_ADAPTER_ERROR_NOT_INITIALIZED;
+            return false;
+        }
+
+        wiced_result_t result = wiced_bt_ble_scan(BTM_BLE_SCAN_TYPE_NONE, WICED_FALSE, nullptr);
+        if (result != WICED_BT_SUCCESS && result != WICED_BT_PENDING) {
+            _last_error = BLE_ADAPTER_ERROR_SCAN_STOP_FAILED;
+            return false;
+        }
+
+        _last_error = BLE_ADAPTER_ERROR_NONE;
+        return true;
     }
 
     void BLEAdapter::on_stack_enabled() {

@@ -6,6 +6,7 @@
 
 #include "BLEService.h"
 #include "BLECharacteristic.h"
+#include "BLEDevice.h"
 
 /**
  * Public error codes for the BLE library. Methods that can fail return
@@ -25,6 +26,7 @@ typedef enum {
     BLE_ERROR_TOO_MANY_SERVICES,
     BLE_ERROR_INVALID_UUID,
     BLE_ERROR_ADVERTISE_FAILED,
+    BLE_ERROR_SCAN_FAILED,
     BLE_ERROR_UNKNOWN,
 } ble_error_t;
 
@@ -77,6 +79,24 @@ public:
      * advertising was never started. */
     void stopAdvertise();
 
+    /* Starts continuous scanning for nearby peripherals (central role).
+     * When 'serviceUuid' is non-null/non-empty, only peripherals
+     * advertising that service UUID are surfaced by available(). Discovered
+     * peripherals accumulate in an internal buffer for available() to
+     * drain; call poll() regularly while scanning for that buffer to fill.
+     * Returns false on failure; see lastError(). */
+    bool scan(const char *serviceUuid = nullptr);
+
+    /* Stops scanning started by scan(). Safe to call even if scanning was
+     * never started. */
+    void stopScan();
+
+    /* Returns the next discovered peripheral queued since the last
+     * available() call, or a default-constructed (BLEDevice::hasAddress()
+     * == false) BLEDevice if none is queued. Must be called after poll()
+     * has had a chance to drain the internal adapter's scan results. */
+    BLEDevice available();
+
     /* Returns the reason the most recent failing call failed. */
     ble_error_t lastError() const;
 
@@ -93,10 +113,24 @@ private:
 
     static const int MAX_SERVICES = 4;
 
+    /* Bounds the internal buffer of discovered-but-not-yet-retrieved
+     * devices that poll() fills from the adapter's queued scan results and
+     * available() drains. */
+    static const int MAX_DISCOVERED_DEVICES = 8;
+
     bool _active = false;
     ble_error_t _last_error = BLE_ERROR_NONE;
     BLEService *_services[MAX_SERVICES];
     int _serviceCount = 0;
+
+    /* Simple FIFO ring buffer of discovered devices awaiting available().
+     * If it fills up before the sketch calls available(), the oldest
+     * not-yet-retrieved discovery is dropped in favor of the newest one. */
+    BLEDevice _discoveredDevices[MAX_DISCOVERED_DEVICES];
+    int _discoveredCount = 0;
+    int _discoveredHead = 0;
+
+    void _queueDiscoveredDevice(const BLEDevice &device);
 };
 
 /* The PSOC6 PDL device headers (cyble_*_device.h, pulled in transitively via

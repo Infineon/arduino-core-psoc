@@ -16,6 +16,7 @@ BLEClass	KEYWORD1
 ble_error_t	KEYWORD1
 BLEService	KEYWORD1
 BLECharacteristic	KEYWORD1
+BLEDevice	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
@@ -38,6 +39,17 @@ valueLength	KEYWORD2
 value	KEYWORD2
 readValue	KEYWORD2
 writeValue	KEYWORD2
+scan	KEYWORD2
+stopScan	KEYWORD2
+available	KEYWORD2
+address	KEYWORD2
+hasAddress	KEYWORD2
+localName	KEYWORD2
+hasLocalName	KEYWORD2
+rssi	KEYWORD2
+advertisedServiceUuidCount	KEYWORD2
+advertisedServiceUuid	KEYWORD2
+hasAdvertisedServiceUuid	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)
@@ -53,6 +65,7 @@ BLE_ERROR_QUEUE_CREATE_FAILED	LITERAL1
 BLE_ERROR_TOO_MANY_SERVICES	LITERAL1
 BLE_ERROR_INVALID_UUID	LITERAL1
 BLE_ERROR_ADVERTISE_FAILED	LITERAL1
+BLE_ERROR_SCAN_FAILED	LITERAL1
 BLEBroadcast	LITERAL1
 BLERead	LITERAL1
 BLEWriteWithoutResponse	LITERAL1
