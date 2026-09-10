@@ -5,6 +5,13 @@ include:
     - extras/arduino-examples/examples/02.Digital/toneMultiple/toneMultiple.ino
     - extras/arduino-examples/examples/06.Sensors/Memsic2125/Memsic2125.ino
     - extras/arduino-examples/examples/08.Strings/StringConstructors/StringConstructors.ino
+    - libraries/BLE/examples/BLEBeginEnd/BLEBeginEnd.ino
+    - libraries/BLE/examples/CentralScan/CentralScan.ino
+    - libraries/BLE/examples/CentralScanConnect/CentralScanConnect.ino
+    - libraries/BLE/examples/CentralConnect/CentralConnect.ino
+    - libraries/BLE/examples/PeripheralAdvertise/PeripheralAdvertise.ino
+    - libraries/BLE/examples/PeripheralConnect/PeripheralConnect.ino
+    - libraries/BLE/examples/PeripheralGATTServer/PeripheralGATTServer.ino
 
 exclude:
    - fqbn: infineon:psoc6:cy8cproto_063_ble
@@ -19,3 +26,13 @@ exclude:
       - libraries/WiFi/examples/WiFiUdpSender/WiFiUdpSender.ino
       - libraries/WiFi/examples/WiFiWebClient/WiFiWebClient.ino
       - libraries/PDM/examples/raw_data_output/raw_data_output.ino
+
+   - fqbn: infineon:psoc6:cy8ckit_062s2_ai
+     sketch:
+      - libraries/BLE/examples/BLEBeginEnd/BLEBeginEnd.ino
+      - libraries/BLE/examples/CentralScan/CentralScan.ino
+      - libraries/BLE/examples/CentralScanConnect/CentralScanConnect.ino
+      - libraries/BLE/examples/CentralConnect/CentralConnect.ino
+      - libraries/BLE/examples/PeripheralAdvertise/PeripheralAdvertise.ino
+      - libraries/BLE/examples/PeripheralConnect/PeripheralConnect.ino
+      - libraries/BLE/examples/PeripheralGATTServer/PeripheralGATTServer.ino
