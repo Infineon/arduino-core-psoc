@@ -320,3 +320,26 @@ unit-test:
         query: onewire_DS18x20_board == '2:1'
         working_dir: extras/arduino-core-tests
 
+    unit-test-bluetooth-gatt-ble:
+      - description: Compiling, flashing and monitoring Bluetooth gatt unit test.
+        command: make test_bluetooth_gatt_single
+        query: bluetooth_single_board == '1:1'
+        working_dir: extras/arduino-core-tests
+
+    unit-test-bluetooth-stack-ble:
+      - description: Compiling, flashing and monitoring Bluetooth stack unit test.
+        command: make test_bluetooth_stack_single
+        query: bluetooth_single_board == '1:1'
+        working_dir: extras/arduino-core-tests
+
+    unit-test-bluetooth-connected2-ble:
+      - description: Compiling, flashing and monitoring bluetooth peripheral unit test.
+        command: make test_bluetooth_connected2_peripheral
+        query: bluetooth_connected2_board1 == '1:1'
+        working_dir: extras/arduino-core-tests
+
+      - description: Compiling, flashing and monitoring bluetooth central unit test.
+        command: make test_bluetooth_connected2_central
+        query: bluetooth_connected2_board2 == '1:1'
+        working_dir: extras/arduino-core-tests
+    

@@ -34,3 +34,6 @@ unit-test:
     - unit-test-analog-io-pwm-ble
     - unit-test-iic-single-board-ble
     - unit-test-onewire-DS18x20-ble
+    - unit-test-bluetooth-gatt-ble
+    - unit-test-bluetooth-stack-ble
+    - unit-test-bluetooth-connected2-ble
