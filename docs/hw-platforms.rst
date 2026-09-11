@@ -26,6 +26,7 @@ CY8CKIT-062S2-AI
 `CY8CKIT-062S2-AI`_
 
 * Name in Arduino IDE: ``CY8CKIT-062S2-AI``
+* FQBN in Arduino CLI: ``infineon:psoc6:cy8ckit_062s2_ai``
 * `Product Page <https://www.infineon.com/cms/en/product/evaluation-boards/cy8ckit-062s2-ai/>`__
 
 Pinout Diagram
@@ -42,6 +43,7 @@ CY8CPROTO-063-BLE
 `CY8CPROTO-063-BLE`_
 
 * Name in Arduino IDE: ``CY8CPROTO-063-BLE``
+* FQBN in Arduino CLI: ``infineon:psoc6:cy8cproto_063_ble``
 * `Product Page <https://www.infineon.com/evaluation-board/cy8cproto-063-ble/>`__
 
 Pinout Diagram
